@@ -9,26 +9,26 @@
         font-family: -apple-system, BlinkMacSystemFont, "PingFang HK", "Microsoft JhengHei", sans-serif;
         margin: 0;
         min-height: 100vh;
-        background: linear-gradient(135deg, #f6f7fb 0%, #eef1f8 100%);
-        color: #111827;
         display: grid;
         place-items: center;
+        background: linear-gradient(135deg, #f5f7fb 0%, #eef2f7 100%);
+        color: #111827;
       }
       .card {
-        width: min(720px, calc(100vw - 32px));
+        width: min(760px, calc(100vw - 32px));
         background: white;
         border: 1px solid #dbe2ef;
-        border-radius: 20px;
+        border-radius: 24px;
         padding: 32px;
-        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+        box-shadow: 0 24px 50px rgba(15, 23, 42, 0.08);
       }
       h1 {
         margin: 0 0 12px;
-        font-size: 32px;
+        font-size: 34px;
       }
       p {
         margin: 8px 0;
-        line-height: 1.6;
+        line-height: 1.7;
         font-size: 16px;
       }
       .actions {
@@ -39,10 +39,10 @@
       }
       a {
         display: inline-block;
-        padding: 12px 18px;
-        border-radius: 999px;
         text-decoration: none;
         font-weight: 700;
+        padding: 12px 18px;
+        border-radius: 999px;
       }
       .primary {
         background: #111827;
@@ -63,12 +63,12 @@
     <main class="card">
       <h1>Dance Kingdom Admin V10</h1>
       <p>Professional PDF generation with Chinese font support is live.</p>
-      <p>按下面按鈕可以下載測試 PDF，睇下字體大小同繁體中文顯示。</p>
+      <p>按下面按鈕可以下載測試 PDF，同時驗證字體大小同繁體中文顯示。</p>
       <div class="actions">
-        <a class="primary" href="/api/index.py/api/pdf">Download PDF</a>
-        <a class="secondary" href="/api/index.py/api/health">Health Check</a>
+        <a class="primary" href="/api/index/api/pdf">Download PDF</a>
+        <a class="secondary" href="/api/index/api/health">Health Check</a>
       </div>
-      <p style="margin-top: 18px;">API: <code>/api/index.py/api/pdf</code></p>
+      <p style="margin-top: 18px;">API: <code>/api/index/api/pdf</code></p>
     </main>
   </body>
 </html>

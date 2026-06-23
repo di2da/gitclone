@@ -1,3 +1,1 @@
-fastapi==0.115.0
 reportlab==4.2.2
-starlette==0.38.6

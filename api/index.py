@@ -1,14 +1,57 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from io import BytesIO
 
-from pdf_engine import build_pdf_bytes
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse, Response
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfgen import canvas
 
 app = FastAPI(title="Dance Kingdom Admin V10", version="1.0.0")
 
 
-def _home_html() -> str:
+def _font_name() -> str:
+    name = "STSong-Light"
+    try:
+        pdfmetrics.registerFont(UnicodeCIDFont(name))
+    except Exception:
+        pass
+    return name
+
+
+def _build_pdf() -> bytes:
+    buf = BytesIO()
+    pdf = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    font = _font_name()
+
+    pdf.setTitle("Dance Kingdom Admin V10")
+    pdf.setAuthor("Dance Kingdom")
+    pdf.setFont(font, 24)
+    pdf.drawCentredString(width / 2, height - 28 * mm, "Dance Kingdom Admin V10")
+
+    lines = [
+        "這是一個專業文件測試 (Professional Test)",
+        "解決問題 1: 亂碼 - 廣東話/中文顯示正常",
+        "解決問題 2: 字體大小 - 標題 24pt，內文 12pt",
+        "Dance Kingdom Admin V10 Improved via ReportLab",
+    ]
+
+    pdf.setFont(font, 12)
+    y = height - 40 * mm
+    for line in lines:
+        pdf.drawString(20 * mm, y, line)
+        y -= 8 * mm
+
+    pdf.save()
+    return buf.getvalue()
+
+
+@app.get("/", response_class=HTMLResponse)
+def home() -> str:
     return """
     <!doctype html>
     <html lang="zh-Hant">
@@ -21,26 +64,26 @@ def _home_html() -> str:
             font-family: -apple-system, BlinkMacSystemFont, "PingFang HK", "Microsoft JhengHei", sans-serif;
             margin: 0;
             min-height: 100vh;
-            background: linear-gradient(135deg, #f6f7fb 0%, #eef1f8 100%);
-            color: #111827;
             display: grid;
             place-items: center;
+            background: linear-gradient(135deg, #f5f7fb 0%, #eef2f7 100%);
+            color: #111827;
           }
           .card {
-            width: min(720px, calc(100vw - 32px));
+            width: min(760px, calc(100vw - 32px));
             background: white;
             border: 1px solid #dbe2ef;
-            border-radius: 20px;
+            border-radius: 24px;
             padding: 32px;
-            box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+            box-shadow: 0 24px 50px rgba(15, 23, 42, 0.08);
           }
           h1 {
             margin: 0 0 12px;
-            font-size: 32px;
+            font-size: 34px;
           }
           p {
             margin: 8px 0;
-            line-height: 1.6;
+            line-height: 1.7;
             font-size: 16px;
           }
           .actions {
@@ -51,10 +94,10 @@ def _home_html() -> str:
           }
           a {
             display: inline-block;
-            padding: 12px 18px;
-            border-radius: 999px;
             text-decoration: none;
             font-weight: 700;
+            padding: 12px 18px;
+            border-radius: 999px;
           }
           .primary {
             background: #111827;
@@ -75,42 +118,28 @@ def _home_html() -> str:
         <main class="card">
           <h1>Dance Kingdom Admin V10</h1>
           <p>Professional PDF generation with Chinese font support is live.</p>
-          <p>按下面按鈕可以下載測試 PDF，睇下字體大小同繁體中文顯示。</p>
+          <p>按下面按鈕可以下載測試 PDF，同時驗證字體大小同繁體中文顯示。</p>
           <div class="actions">
-            <a class="primary" href="/api/pdf">Download PDF</a>
-            <a class="secondary" href="/api/health">Health Check</a>
+            <a class="primary" href="/api/index/api/pdf">Download PDF</a>
+            <a class="secondary" href="/api/index/api/health">Health Check</a>
           </div>
-          <p style="margin-top: 18px;">API: <code>/api/pdf</code></p>
+          <p style="margin-top: 18px;">API: <code>/api/index/api/pdf</code></p>
         </main>
       </body>
     </html>
     """
 
 
-@app.get("/", response_class=HTMLResponse)
-@app.get("/api/index.py", response_class=HTMLResponse)
-def home() -> str:
-    return _home_html()
-
-
 @app.get("/api/health")
-@app.get("/api/index.py/api/health")
 def health() -> dict:
     return {"status": "ok", "service": "dk-admin-v10"}
 
 
 @app.get("/api/pdf")
-@app.get("/api/index.py/api/pdf")
 def pdf() -> Response:
-    content = [
-        "這是一個專業文件測試 (Professional Test)",
-        "解決問題 1: 亂碼 - 廣東話/中文顯示正常",
-        "解決問題 2: 字體大小 - 標題 24pt，內文 12pt",
-        "Dance Kingdom Admin V10 Improved via ReportLab",
-    ]
-    pdf_bytes = build_pdf_bytes(content, title="Dance Kingdom Admin V10")
-    return StreamingResponse(
-        iter([pdf_bytes]),
+    pdf_bytes = _build_pdf()
+    return Response(
+        content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": 'attachment; filename="dk-admin-test.pdf"'},
     )
