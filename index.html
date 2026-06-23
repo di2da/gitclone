@@ -261,15 +261,120 @@
       }
 
       .invoice {
-        background: white;
-        border: 1px solid #cfd6df;
-        border-radius: 8px;
-        padding: 22px;
+        background: #f8f4eb;
+        border: 1px solid #bab3a6;
+        border-radius: 10px;
+        padding: 18px;
       }
       .invoice-paper {
         width: 100%;
-        background: white;
+        background: #fffdf8;
         color: #000;
+        border: 1px solid #111;
+        padding: 18px 18px 16px;
+        font-family: "PingFang HK", "Microsoft JhengHei", "Noto Serif TC", serif;
+        position: relative;
+      }
+      .legacy-header {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 16px;
+        align-items: start;
+        padding-bottom: 12px;
+        margin-bottom: 12px;
+        border-bottom: 2px solid #111;
+      }
+      .brand-card {
+        display: grid;
+        grid-template-columns: 84px 1fr;
+        gap: 14px;
+        align-items: center;
+      }
+      .logo-box {
+        width: 84px;
+        height: 84px;
+        border: 2px solid #111;
+        border-radius: 16px;
+        background:
+          radial-gradient(circle at 30% 30%, rgba(17,17,17,.08), transparent 26%),
+          linear-gradient(180deg, #fff, #f4efe3);
+        display: grid;
+        place-items: center;
+        position: relative;
+        overflow: hidden;
+      }
+      .logo-box::before {
+        content: "";
+        position: absolute;
+        inset: 10px;
+        border: 1px solid #111;
+        border-radius: 12px;
+      }
+      .logo-core {
+        position: relative;
+        text-align: center;
+        font-weight: 900;
+        line-height: 1;
+      }
+      .logo-core .dk {
+        font-size: 28px;
+        letter-spacing: -.06em;
+        display: block;
+      }
+      .logo-core .tag {
+        display: block;
+        margin-top: 3px;
+        font-size: 11px;
+        letter-spacing: .14em;
+      }
+      .brand-lines .cn {
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: .02em;
+      }
+      .brand-lines .en {
+        margin-top: 2px;
+        font-size: 13px;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+      }
+      .brand-lines .meta {
+        margin-top: 6px;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+      .brand-lines .meta strong {
+        font-weight: 900;
+      }
+      .seal-badge {
+        width: 148px;
+        text-align: center;
+        border: 2px solid #111;
+        border-radius: 18px;
+        padding: 10px 12px;
+        background:
+          radial-gradient(circle at center, rgba(170,20,20,.06), transparent 56%),
+          #fffdf8;
+        box-shadow: inset 0 0 0 1px rgba(17,17,17,.08);
+      }
+      .seal-badge .seal-ink {
+        width: 92px;
+        height: 92px;
+        border-radius: 50%;
+        margin: 0 auto 8px;
+        border: 3px double #8b1f1f;
+        color: #8b1f1f;
+        display: grid;
+        place-items: center;
+        font-weight: 900;
+        font-size: 18px;
+        letter-spacing: .08em;
+        transform: rotate(-10deg);
+      }
+      .seal-badge .seal-note {
+        font-size: 12px;
+        line-height: 1.35;
+        font-weight: 800;
       }
       .invoice-top {
         display: grid;
@@ -297,14 +402,16 @@
       .title-box {
         margin: 10px 0 16px;
         text-align: center;
-        padding-bottom: 8px;
+        padding: 8px 0 10px;
+        border-top: 1px solid #111;
         border-bottom: 1px solid #111;
+        background: linear-gradient(180deg, rgba(17,17,17,.03), rgba(17,17,17,0));
       }
       .title-box .title {
         display: block;
-        font-size: 28px;
+        font-size: 27px;
         font-weight: 900;
-        letter-spacing: .02em;
+        letter-spacing: .06em;
       }
       .title-box .sub {
         display: block;
@@ -356,25 +463,67 @@
       }
       .bottom-box {
         border: 1px solid #111;
-        min-height: 100px;
+        min-height: 124px;
         padding: 12px;
+        background: #fffdf8;
       }
       .bottom-box .head {
         font-weight: 900;
         margin-bottom: 8px;
       }
+      .note-bank {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px dashed rgba(17,17,17,.45);
+        font-size: 12px;
+        line-height: 1.55;
+      }
       .stamp-area {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
         gap: 12px;
-        min-height: 60px;
+        align-items: end;
+        min-height: 68px;
       }
       .sig-line {
         border-top: 1px solid #111;
         margin-top: 26px;
         padding-top: 6px;
         font-size: 12px;
+      }
+      .signature-ink {
+        min-height: 44px;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        font-family: "Brush Script MT", "Snell Roundhand", "Segoe Script", cursive;
+        font-size: 30px;
+        line-height: 1;
+        letter-spacing: .02em;
+        color: #111;
+        transform: rotate(-4deg);
+        padding-bottom: 2px;
+      }
+      .stamp-mini {
+        width: 86px;
+        height: 86px;
+        border-radius: 50%;
+        border: 3px double #8b1f1f;
+        color: #8b1f1f;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        margin-left: auto;
+        font-weight: 900;
+        font-size: 13px;
+        line-height: 1.1;
+        transform: rotate(-8deg);
+        background: rgba(139,31,31,.03);
+      }
+      .stamp-mini span {
+        display: block;
+        font-size: 10px;
+        letter-spacing: .14em;
       }
 
       .hidden { display:none !important; }
@@ -384,7 +533,7 @@
         .layout, .invoice-top, .two, .bottom-grid, .stats { grid-template-columns: 1fr; }
       }
       @media print {
-        @page { size: A4; margin: 8mm; }
+        @page { size: A4; margin: 7mm; }
         body { background: white; }
         .shell { display: block; padding: 0; }
         .app { display: block; min-height: auto; }
@@ -393,10 +542,11 @@
         .layout { display: block; }
         .panel { border: 0; box-shadow: none; }
         .panel-head { display: none !important; }
-        .invoice { padding: 0; border: 0; }
+        .invoice { padding: 0; border: 0; background: white; }
         .panel-body { padding: 0; }
         .invoice-paper { border: 0; width: 100%; }
         .bottom-grid { break-inside: avoid; }
+        .no-print { display:none !important; }
       }
     </style>
   </head>
@@ -543,6 +693,30 @@
               <div class="panel-body">
                 <div class="invoice" id="paper">
                   <div class="invoice-paper">
+                    <div class="legacy-header">
+                      <div class="brand-card">
+                        <div class="logo-box" aria-hidden="true">
+                          <div class="logo-core">
+                            <span class="dk">DK</span>
+                            <span class="tag">軍團</span>
+                          </div>
+                        </div>
+                        <div class="brand-lines">
+                          <div class="cn">狄易達軍團跳舞學校</div>
+                          <div class="en">Dance Kingdom · Di2da Dance School</div>
+                          <div class="meta">
+                            香港九龍紅磡鶴園街 2G 號<br/>
+                            恒豐工業大廈 1 期 3 樓 C 室<br/>
+                            <strong>T</strong> (852) 3525 0134 / 6010 0005 · <strong>E</strong> admin@dancekingdom.com.hk
+                          </div>
+                        </div>
+                      </div>
+                      <div class="seal-badge">
+                        <div class="seal-ink">軍團</div>
+                        <div class="seal-note">OFFICIAL<br/>DOCUMENT</div>
+                      </div>
+                    </div>
+
                     <div class="invoice-top">
                       <div class="address">
                         <div class="label">致 To</div>
@@ -587,12 +761,19 @@
                       <div class="bottom-box">
                         <div class="head" id="previewNotesTitle">Notes</div>
                         <div id="previewNotes">如有查詢，請聯絡行政部。</div>
+                        <div class="note-bank">
+                          <div><b>Bank</b> <span id="previewBankInfo">Bank of China 012 882 000 82760</span></div>
+                          <div><b>Entity</b> Di2da Dance School</div>
+                        </div>
                       </div>
                       <div class="bottom-box">
                         <div class="head">Authorized / 授權人簽署</div>
                         <div class="stamp-area">
-                          <div style="font-size:12px;color:#616b7a;">Stamp</div>
-                          <div style="font-size:12px;color:#616b7a;">Signature</div>
+                          <div class="stamp-mini">
+                            軍團印章
+                            <span>OFFICIAL</span>
+                          </div>
+                          <div class="signature-ink">Authorized</div>
                         </div>
                         <div class="sig-line">簽署 Signature</div>
                       </div>
@@ -729,6 +910,7 @@
         $("#previewProject").textContent = $("#projectName").value || "柏德校園舞蹈課程";
         $("#previewNotesTitle").textContent = $("#notesTitle").value || "Notes";
         $("#previewNotes").textContent = $("#notes").value || "如有查詢，請聯絡行政部。";
+        $("#previewBankInfo").textContent = $("#bankInfo").value || "Bank of China 012 882 000 82760";
         $("#statClient").textContent = ($("#clientName").value || "柏德學校").replace(/學校$/, "");
         $("#statNo").textContent = $("#docNo").value || "IN0622";
 
