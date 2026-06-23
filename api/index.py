@@ -8,8 +8,7 @@ from pdf_engine import build_pdf_bytes
 app = FastAPI(title="Dance Kingdom Admin V10", version="1.0.0")
 
 
-@app.get("/", response_class=HTMLResponse)
-def home() -> str:
+def _home_html() -> str:
     return """
     <!doctype html>
     <html lang="zh-Hant">
@@ -88,12 +87,20 @@ def home() -> str:
     """
 
 
+@app.get("/", response_class=HTMLResponse)
+@app.get("/api/index.py", response_class=HTMLResponse)
+def home() -> str:
+    return _home_html()
+
+
 @app.get("/api/health")
+@app.get("/api/index.py/api/health")
 def health() -> dict:
     return {"status": "ok", "service": "dk-admin-v10"}
 
 
 @app.get("/api/pdf")
+@app.get("/api/index.py/api/pdf")
 def pdf() -> Response:
     content = [
         "這是一個專業文件測試 (Professional Test)",
