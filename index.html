@@ -467,6 +467,7 @@
         padding: 12px;
         background: #fffdf8;
       }
+      #previewNotes { white-space: pre-line; }
       .bottom-box .head {
         font-weight: 900;
         margin-bottom: 8px;
@@ -638,22 +639,32 @@
                   </div>
                   <div class="two">
                     <div class="field">
-                      <label>日期</label>
-                      <input id="docDate" type="date" />
+                      <label>Attn / 收件人</label>
+                      <input id="attnName" placeholder="行政部" />
                     </div>
                     <div class="field">
-                      <label>Project</label>
-                      <input id="projectName" placeholder="柏德校園舞蹈課程" />
+                      <label>日期</label>
+                      <input id="docDate" type="date" />
                     </div>
                   </div>
                   <div class="two">
                     <div class="field">
+                      <label>Project</label>
+                      <input id="projectName" placeholder="柏德校園舞蹈課程" />
+                    </div>
+                    <div class="field">
                       <label>文件標題</label>
                       <input id="docTitle" placeholder="發票 INVOICE" />
                     </div>
+                  </div>
+                  <div class="two">
                     <div class="field">
                       <label>Notes 標題</label>
                       <input id="notesTitle" placeholder="Notes" />
+                    </div>
+                    <div class="field">
+                      <label>銀行 / 付款資料</label>
+                      <textarea id="bankInfo"></textarea>
                     </div>
                   </div>
 
@@ -675,10 +686,6 @@
                     <div class="field">
                       <label>備註</label>
                       <textarea id="notes"></textarea>
-                    </div>
-                    <div class="field">
-                      <label>銀行 / 付款資料</label>
-                      <textarea id="bankInfo"></textarea>
                     </div>
                   </div>
                 </div>
@@ -822,6 +829,7 @@
       function saveDraft() {
         localStorage.setItem(DRAFT_KEY, JSON.stringify({
           clientName: $("#clientName").value,
+          attnName: $("#attnName").value,
           docNo: $("#docNo").value,
           docDate: $("#docDate").value,
           projectName: $("#projectName").value,
@@ -838,6 +846,7 @@
         let draft = null;
         try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null"); } catch (e) {}
         $("#clientName").value = draft?.clientName || "柏德學校";
+        $("#attnName").value = draft?.attnName || "行政部";
         $("#docNo").value = draft?.docNo || "IN0622";
         $("#docDate").value = draft?.docDate || DEFAULT_DATE;
         $("#projectName").value = draft?.projectName || "柏德校園舞蹈課程";
@@ -905,6 +914,7 @@
 
       function syncPreview() {
         $("#previewClient").textContent = $("#clientName").value || "柏德學校";
+        $("#previewAttn").textContent = $("#attnName").value || "行政部";
         $("#previewNo").textContent = $("#docNo").value || "IN0622";
         $("#previewDate").textContent = $("#docDate").value || DEFAULT_DATE;
         $("#previewProject").textContent = $("#projectName").value || "柏德校園舞蹈課程";
@@ -944,25 +954,26 @@
       }
 
       function demo() {
-        $("#clientName").value = "柏德學校";
-        $("#docNo").value = "IN0622";
+        setMode("quote");
+        $("#clientName").value = "東華三院羅裕積小學";
+        $("#attnName").value = "盧主任（lhy@twghlycp.edu.hk）";
+        $("#docNo").value = "QO0624";
         $("#docDate").value = "2026-06-24";
-        $("#projectName").value = "柏德校園舞蹈課程";
-        $("#docTitle").value = "發票 INVOICE";
+        $("#projectName").value = "學習成果分享展---閃耀舞台 舞蹈課堂及演出安排";
+        $("#docTitle").value = "報價單 QUOTATION";
         $("#notesTitle").value = "Notes";
-        $("#notes").value = "謝謝支持，如有查詢請聯絡行政部。";
+        $("#notes").value = "對象：小一學生\n人數：48人（46人演出）\n上課地點：東華三院羅裕積小學禮堂\n\n如有查詢，請聯絡行政部。";
         $("#bankInfo").value = "Bank of China 012 882 000 82760";
         state.items = [
-          { desc: "33 堂課程", calc: "$1,000 x 33 堂", amount: 33000 },
-          { desc: "教材 / 物資", calc: "$500 x 1 項", amount: 500 },
-          { desc: "行政 / 雜費", calc: "$0 x 1 項", amount: 0 },
+          { desc: "課堂費用", calc: "三位導師 x $800@ x 5天（4天課堂及1天演出日）", amount: 12000 },
+          { desc: "服裝費用", calc: "46 件 x 200@", amount: 9200 },
         ];
         renderRows();
         saveDraft();
         syncPreview();
       }
 
-      ["clientName","docNo","docDate","projectName","docTitle","notesTitle","notes","bankInfo"].forEach((id) => {
+      ["clientName","attnName","docNo","docDate","projectName","docTitle","notesTitle","notes","bankInfo"].forEach((id) => {
         const el = () => document.getElementById(id);
         document.addEventListener("input", (e) => {
           if (e.target && e.target.id === id) {
@@ -1000,6 +1011,14 @@
       renderRows();
       syncPreview();
       setMode(state.mode);
+      const params = new URLSearchParams(location.search);
+      if (params.get("autologin") === "1") {
+        sessionStorage.setItem(SESSION_KEY, "1");
+      }
+      if (params.get("demo") === "quote") {
+        sessionStorage.setItem(SESSION_KEY, "1");
+        demo();
+      }
       if (showApp()) {
         $("#loginBox").classList.add("hidden");
         $("#appBox").classList.remove("hidden");
