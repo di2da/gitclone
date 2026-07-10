@@ -80,6 +80,15 @@ PASSWORD_ITERATIONS = 210000
 SESSION_TTL_HOURS = 12
 LOCK_DURATION_MINUTES = 15
 LOCK_THRESHOLD = 5
+ROLE_ALIASES = {
+    "admin": "admin",
+    "manager": "manager",
+    "finance": "finance",
+    "tutor": "tutor",
+    # Legacy roles kept for backward compatibility.
+    "staff": "manager",
+    "viewer": "tutor",
+}
 
 
 def _now():
@@ -99,6 +108,17 @@ def _parse_dt(value):
         return datetime.strptime(str(value), "%Y-%m-%d %H:%M:%S")
     except Exception:
         return None
+
+
+def _normalize_role(role: str):
+    value = str(role or "").strip().lower()
+    return ROLE_ALIASES.get(value, value or "tutor")
+
+
+def _role_allowed(role: str, allowed_roles):
+    normalized = _normalize_role(role)
+    allowed = {_normalize_role(item) for item in allowed_roles}
+    return normalized == "admin" or normalized in allowed
 
 
 def _hash_password(password: str, salt: Optional[str] = None):
@@ -128,6 +148,33 @@ def _verify_password(password: str, stored: str):
         except Exception:
             return False, None
     return hmac.compare_digest(password, stored), _hash_password(password)
+
+
+def _basic_auth_user(request: Request):
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("basic "):
+        return None
+    try:
+        token = header.split(" ", 1)[1].strip()
+        raw = base64.b64decode(token).decode("utf-8")
+        username, password = raw.split(":", 1)
+    except Exception:
+        return None
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, username, password, display_name, role, is_active, failed_attempts, locked_until FROM app_users WHERE username=?",
+        (username.strip(),),
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row or row[5] != 1:
+        return None
+    ok, _ = _verify_password(password, row[2])
+    if not ok:
+        return None
+    return row
 
 def _ensure_user_table():
     conn = sqlite3.connect(DB_PATH)
@@ -1984,9 +2031,44 @@ def _require_admin_username(username: str = Depends(authenticate)):
     user = _get_user_by_username(username)
     if not user or not user[5]:
         raise HTTPException(status_code=403, detail="Admin only")
-    if (user[4] or "").lower() != "admin":
+    if _normalize_role(user[4]) != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
     return username
+
+
+def require_roles(*roles, allow_basic_auth: bool = False):
+    allowed_roles = {_normalize_role(role) for role in roles}
+
+    def _dep(request: Request, credentials: HTTPBasicCredentials = Depends(security)):
+        user = _current_user_record(request)
+        if not user and allow_basic_auth:
+            user = _basic_auth_user(request)
+        if not user and credentials and credentials.username and credentials.password:
+            # Login flow is still handled separately; this branch keeps compatibility
+            # with existing Basic Auth based internal calls.
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, username, password, display_name, role, is_active, failed_attempts, locked_until FROM app_users WHERE username=?",
+                (credentials.username,),
+            )
+            row = cursor.fetchone()
+            conn.close()
+            if row and row[5] == 1:
+                ok, _ = _verify_password(credentials.password, row[2])
+                if ok:
+                    user = row
+        if not user:
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized",
+                headers={"WWW-Authenticate": "Basic"},
+            )
+        if not _role_allowed(user[3], allowed_roles):
+            raise HTTPException(status_code=403, detail="Forbidden")
+        return user
+
+    return _dep
 
 
 def _render_login_page(error: str = ""):
@@ -2279,7 +2361,10 @@ def _render_dashboard_page(request: Request):
     today = datetime.now().strftime("%Y年%m月%d日")
     display_name = _current_display_name(request)
     user = _current_user_record(request)
-    role_label = "Admin" if user and (user[3] or "").lower() == "admin" else "Staff"
+    role_label = "Guest"
+    if user:
+        role_value = _normalize_role(user[3])
+        role_label = role_value.capitalize()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
@@ -2721,9 +2806,10 @@ def _render_accounts_page(request: Request, notice: str = ""):
                         <div><label>密碼</label><input name="password" type="text" required></div>
                         <div><label>角色</label>
                             <select name="role">
-                                <option value="staff">staff</option>
-                                <option value="viewer">viewer</option>
                                 <option value="admin">admin</option>
+                                <option value="manager">manager</option>
+                                <option value="finance">finance</option>
+                                <option value="tutor">tutor</option>
                             </select>
                         </div>
                     </div>
@@ -2759,7 +2845,7 @@ def _get_recent_announcements(limit: int = 5):
 
 def _render_announcements_page(request: Request, notice: str = ""):
     user = _current_user_record(request)
-    is_admin = bool(user and (user[3] or "").lower() == "admin")
+    is_admin = bool(user and _normalize_role(user[3]) == "admin")
     rows = _get_recent_announcements(20)
     notice_html = f'<div class="notice">{html.escape(notice)}</div>' if notice else ""
     items_html = ""
@@ -2894,9 +2980,9 @@ async def admin_accounts_create(
     _require_admin(request)
     username = username.strip()
     display_name = display_name.strip()
-    role = (role or "staff").strip().lower()
-    if role not in {"admin", "staff", "viewer"}:
-        role = "staff"
+    role = _normalize_role(role or "tutor")
+    if role not in {"admin", "manager", "finance", "tutor"}:
+        role = "tutor"
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
@@ -4334,7 +4420,7 @@ async def invoice_clients_export(username: str = Depends(_require_admin_username
 
 
 @app.get("/announcements", response_class=HTMLResponse)
-async def announcements(request: Request, username: str = Depends(authenticate)):
+async def announcements(request: Request, user: tuple = Depends(require_roles("admin", "manager", "finance", "tutor"))):
     return HTMLResponse(_render_announcements_page(request))
 
 
@@ -4345,11 +4431,8 @@ async def announcements_create(
     body: str = Form(...),
     pinned: str = Form("0"),
     image: Optional[UploadFile] = File(None),
-    username: str = Depends(authenticate),
+    user: tuple = Depends(require_roles("admin")),
 ):
-    user = _current_user_record(request)
-    if not user or (user[3] or "").lower() != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
     title = title.strip()
     body = body.strip()
     if not title or not body:
@@ -4388,11 +4471,8 @@ async def announcements_create(
 async def announcements_delete(
     request: Request,
     announcement_id: int,
-    username: str = Depends(authenticate),
+    user: tuple = Depends(require_roles("admin")),
 ):
-    user = _current_user_record(request)
-    if not user or (user[3] or "").lower() != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM announcements WHERE id=?", (announcement_id,))
@@ -4861,7 +4941,7 @@ def _import_classes_csv_text(csv_text: str, replace: bool = False):
     return imported
 
 @app.get("/salary")
-async def salary_dashboard(username: str = Depends(authenticate)):
+async def salary_dashboard(user: tuple = Depends(require_roles("admin", "finance"))):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
@@ -4920,7 +5000,7 @@ async def salary_dashboard(username: str = Depends(authenticate)):
     return render_salary_page("📊 薪酬概覽", body)
 
 @app.get("/salary/import")
-async def salary_import_page(username: str = Depends(authenticate)):
+async def salary_import_page(user: tuple = Depends(require_roles("admin", "finance"))):
     body = """
     <div class="alert-info">📥 支援 CSV 匯入導師同班別。建議先匯入導師，再匯入班別。匯入前可先用重置按鈕清空舊資料。</div>
     <div class="stack" style="margin-bottom:18px;">
@@ -4995,7 +5075,7 @@ async def salary_import_page(username: str = Depends(authenticate)):
 async def salary_import_teachers_csv(
     file: UploadFile = File(...),
     replace: str = Form("0"),
-    username: str = Depends(authenticate),
+    user: tuple = Depends(require_roles("admin", "finance")),
 ):
     imported = _import_teachers_csv_text(_csv_text_from_upload(file), replace=str(replace) == "1")
     return HTMLResponse(
@@ -5007,7 +5087,7 @@ async def salary_import_teachers_csv(
 async def salary_import_classes_csv(
     file: UploadFile = File(...),
     replace: str = Form("0"),
-    username: str = Depends(authenticate),
+    user: tuple = Depends(require_roles("admin", "finance")),
 ):
     imported = _import_classes_csv_text(_csv_text_from_upload(file), replace=str(replace) == "1")
     return HTMLResponse(
@@ -5016,7 +5096,7 @@ async def salary_import_classes_csv(
 
 
 @app.post("/salary/reset-data")
-async def salary_reset_data(username: str = Depends(authenticate)):
+async def salary_reset_data(user: tuple = Depends(require_roles("admin", "finance"))):
     _clear_salary_data(clear_teachers=True)
     return HTMLResponse(
         f"{SALARY_HEADER}<div class='container'><div class='card'><h3>✅ 已清空導師 / 班別 / 薪酬記錄</h3><p>你可以重新上載新學年資料。</p><br><a href='/salary/import' class='btn btn-primary'>返回</a></div></div>{SALARY_FOOTER}"
@@ -5036,7 +5116,7 @@ async def salary_import_post(
     completed: List[str] = Form(...),
     monthly: List[str] = Form(...),
     total: List[str] = Form(...),
-    username: str = Depends(authenticate)
+    user: tuple = Depends(require_roles("admin", "finance"))
 ):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -5080,7 +5160,7 @@ async def salary_import_post(
     return HTMLResponse(f"{SALARY_HEADER}<div class='container'><div class='card'><h3>✅ 匯入完成</h3><p>成功匯入 {imported} 筆記錄。</p><br><a href='/salary' class='btn btn-primary'>返回 Dashboard</a></div></div>{SALARY_FOOTER}")
 
 @app.get("/salary/teachers")
-async def salary_teachers(username: str = Depends(authenticate)):
+async def salary_teachers(user: tuple = Depends(require_roles("admin", "finance"))):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""
@@ -5101,7 +5181,7 @@ async def salary_teachers(username: str = Depends(authenticate)):
     return render_salary_page("👨‍🏫 導師列表", html)
 
 @app.get("/salary/teacher/{tid}")
-async def salary_teacher_detail(tid: int, username: str = Depends(authenticate)):
+async def salary_teacher_detail(tid: int, user: tuple = Depends(require_roles("admin", "finance"))):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT name FROM teachers WHERE id=?", (tid,))
@@ -5160,7 +5240,7 @@ async def salary_teacher_detail(tid: int, username: str = Depends(authenticate))
     return render_salary_page(f"👤 {name} 詳細", html)
 
 @app.get("/salary/records")
-async def salary_records(username: str = Depends(authenticate)):
+async def salary_records(user: tuple = Depends(require_roles("admin", "finance"))):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""
@@ -5188,7 +5268,7 @@ async def salary_calculate(
     tid: int,
     month: int = Query(default=None, ge=1, le=12),
     year: int = Query(default=None, ge=2000, le=2100),
-    username: str = Depends(authenticate),
+    user: tuple = Depends(require_roles("admin", "finance")),
 ):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -5238,7 +5318,7 @@ async def salary_calculate(
     return render_salary_page(f"📊 {t[1]} 薪酬計算", html)
 
 @app.get("/salary/report")
-async def salary_report(username: str = Depends(authenticate)):
+async def salary_report(user: tuple = Depends(require_roles("admin", "finance"))):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""
@@ -5313,7 +5393,7 @@ async def salary_report(username: str = Depends(authenticate)):
     return render_salary_page("📄 薪酬總報表", report_html)
 
 @app.get("/salary/classes")
-async def salary_classes(username: str = Depends(authenticate)):
+async def salary_classes(user: tuple = Depends(require_roles("admin", "finance"))):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""
@@ -5337,7 +5417,7 @@ async def salary_classes(username: str = Depends(authenticate)):
 
 
 @app.post("/api/db/query")
-async def db_query(request: Request, username: str = Depends(authenticate)):
+async def db_query(request: Request, user: tuple = Depends(require_roles("admin", allow_basic_auth=True))):
     payload = await request.json()
     sql = (payload.get("sql") or "").strip()
     params = payload.get("params") or []
