@@ -17,6 +17,7 @@
       --butter: #ffe3a3;
       --rose: #ffcfda;
       --shadow: 0 18px 40px rgba(61, 35, 14, 0.12);
+      --shell: rgba(255, 252, 248, 0.82);
     }
 
     * { box-sizing: border-box; }
@@ -24,28 +25,32 @@
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, "PingFang HK", "Noto Sans HK", "Helvetica Neue", Arial, sans-serif;
+      overflow-x: hidden;
       background:
         radial-gradient(circle at top left, rgba(255, 179, 138, 0.35), transparent 34%),
         radial-gradient(circle at top right, rgba(167, 223, 196, 0.35), transparent 28%),
         linear-gradient(180deg, #fffaf4 0%, #fff4ea 100%);
       color: var(--text);
       min-height: 100vh;
-      padding: 18px 14px 24px;
+      padding: 18px 12px 124px;
+      display: flex;
+      justify-content: center;
     }
 
     .phone {
-      max-width: 430px;
+      width: min(1120px, calc(100vw - 24px));
+      max-width: 1120px;
       margin: 0 auto;
-      background: rgba(255, 252, 248, 0.78);
+      background: var(--shell);
       backdrop-filter: blur(18px);
       border: 1px solid rgba(255, 255, 255, 0.8);
-      border-radius: 32px;
+      border-radius: 36px;
       overflow: hidden;
       box-shadow: var(--shadow);
     }
 
     .hero {
-      padding: 18px 18px 18px;
+      padding: 18px 18px 20px;
       background:
         linear-gradient(135deg, rgba(255, 227, 163, 0.65), rgba(255, 207, 218, 0.72)),
         linear-gradient(180deg, #fff8f1, #fff);
@@ -59,7 +64,7 @@
       background: #fff;
       border: 1px solid rgba(36, 36, 36, 0.08);
       box-shadow: 0 18px 40px rgba(61, 35, 14, 0.12);
-      min-height: 360px;
+      min-height: 185px;
       margin-bottom: 14px;
     }
 
@@ -73,9 +78,9 @@
     .topline {
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
       gap: 12px;
-      margin-bottom: 18px;
+      margin-bottom: 14px;
       color: var(--muted);
       font-size: 13px;
     }
@@ -86,6 +91,60 @@
       font-weight: 800;
       letter-spacing: -0.04em;
       margin: 0 0 10px;
+    }
+
+    .hero-copy {
+      max-width: 56ch;
+    }
+
+    .hero-title {
+      margin: 0 0 10px;
+      font-size: clamp(24px, 2.8vw, 38px);
+      line-height: 1.05;
+      letter-spacing: -0.05em;
+      font-weight: 900;
+      color: #1f1f1f;
+    }
+
+    .hero-lead {
+      margin: 0;
+      color: #4f473e;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .hero-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .hero-action {
+      appearance: none;
+      border: 1px solid rgba(36, 36, 36, 0.08);
+      border-radius: 22px;
+      padding: 14px 14px 16px;
+      text-align: left;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.88);
+      box-shadow: 0 12px 24px rgba(61, 35, 14, 0.08);
+      min-height: 82px;
+    }
+
+    .hero-action strong {
+      display: block;
+      font-size: 16px;
+      line-height: 1.15;
+      color: #1f1f1f;
+      margin-bottom: 6px;
+    }
+
+    .hero-action span {
+      display: block;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--muted);
     }
 
     .pantene-mark {
@@ -111,16 +170,13 @@
 
     .sub {
       margin: 0;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.5;
+      color: #50473f;
+      font-size: 15px;
+      line-height: 1.55;
     }
 
     .pill-row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 16px;
+      display: none;
     }
 
     .pill {
@@ -133,7 +189,9 @@
     }
 
     .content {
-      padding: 16px 14px 92px;
+      padding: 16px 14px 18px;
+      display: grid;
+      gap: 14px;
     }
 
     .card {
@@ -142,7 +200,7 @@
       border-radius: 24px;
       padding: 16px;
       box-shadow: 0 10px 28px rgba(47, 30, 14, 0.06);
-      margin-bottom: 14px;
+      margin-bottom: 0;
     }
 
     .card h2, .card h3 {
@@ -153,9 +211,16 @@
     .section-title {
       display: flex;
       justify-content: space-between;
-      align-items: baseline;
+      align-items: center;
       gap: 10px;
       margin-bottom: 12px;
+    }
+
+    .section-title h2,
+    .section-title h3 {
+      font-size: 22px;
+      line-height: 1.12;
+      font-weight: 800;
     }
 
     .section-title small {
@@ -323,10 +388,10 @@
     .action-btn {
       border: 0;
       border-radius: 18px;
-      padding: 14px 14px;
+      padding: 15px 14px;
       font-size: 15px;
       font-weight: 700;
-      color: #222;
+      color: #1f1f1f;
       background: linear-gradient(180deg, #fff, #faf7f1);
       box-shadow: inset 0 0 0 1px rgba(36, 36, 36, 0.08);
       text-align: left;
@@ -755,16 +820,21 @@
     }
 
     .bottom-nav {
-      position: sticky;
-      bottom: 0;
-      margin-top: -78px;
-      background: rgba(255, 250, 245, 0.92);
+      position: fixed;
+      left: 50%;
+      bottom: 12px;
+      transform: translateX(-50%);
+      width: min(1120px, calc(100vw - 18px));
+      background: rgba(255, 250, 245, 0.96);
       backdrop-filter: blur(16px);
-      border-top: 1px solid var(--line);
+      border: 1px solid rgba(36, 36, 36, 0.08);
+      border-radius: 24px;
       display: grid;
       grid-template-columns: repeat(5, 1fr);
-      gap: 4px;
-      padding: 10px 10px 14px;
+      gap: 6px;
+      padding: 8px 8px 10px;
+      box-shadow: 0 14px 30px rgba(61, 35, 14, 0.12);
+      z-index: 20;
     }
 
     .nav-item {
@@ -772,11 +842,13 @@
       border: 0;
       background: transparent;
       text-align: center;
-      font-size: 11px;
+      font-size: 12px;
       color: var(--muted);
-      padding: 10px 6px;
-      border-radius: 16px;
+      padding: 11px 6px 10px;
+      border-radius: 18px;
       cursor: pointer;
+      font-weight: 700;
+      line-height: 1.15;
     }
 
     .nav-item.active {
@@ -795,8 +867,153 @@
       margin-bottom: 4px;
     }
 
-    @media (min-width: 500px) {
-      body { padding-top: 28px; }
+    .home-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .home-intro {
+      display: grid;
+      gap: 12px;
+    }
+
+    .quick-links {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .quick-link {
+      appearance: none;
+      border: 1px solid rgba(36, 36, 36, 0.08);
+      border-radius: 20px;
+      padding: 14px 14px 15px;
+      text-align: left;
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: 0 10px 20px rgba(61, 35, 14, 0.06);
+      cursor: pointer;
+    }
+
+    .quick-link strong {
+      display: block;
+      font-size: 16px;
+      line-height: 1.15;
+      margin-bottom: 5px;
+    }
+
+    .quick-link span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .home-highlight {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .highlight-card {
+      background: rgba(255, 255, 255, 0.84);
+      border: 1px solid rgba(36, 36, 36, 0.08);
+      border-radius: 20px;
+      padding: 14px;
+    }
+
+    .highlight-card strong {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 4px;
+    }
+
+    .highlight-card span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .panel-split {
+      display: grid;
+      gap: 14px;
+    }
+
+    .profile-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .profile-stat {
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid rgba(36, 36, 36, 0.08);
+    }
+
+    .profile-stat strong {
+      display: block;
+      font-size: 22px;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .profile-stat span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    @media (min-width: 700px) {
+      .hero {
+        padding: 20px;
+      }
+
+      .content {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      #section-home,
+      #section-places,
+      #section-comments {
+        grid-column: 1 / -1;
+      }
+
+      #section-favorites,
+      #section-profile {
+        min-height: 100%;
+      }
+    }
+
+    @media (max-width: 699px) {
+      .phone { width: min(1120px, calc(100vw - 18px)); }
+      .hero-actions,
+      .quick-links,
+      .profile-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-actions {
+        gap: 8px;
+      }
+
+      .hero-action {
+        min-height: 68px;
+        padding: 11px 12px 12px;
+      }
+
+      .hero-copy {
+        margin-bottom: 2px;
+      }
+
+      .home-highlight {
+        display: none;
+      }
+
+      .decision-box {
+        padding: 14px 13px;
+      }
     }
   </style>
 </head>
@@ -804,76 +1021,106 @@
   <main class="phone">
     <section class="hero">
       <div class="cover-card" aria-label="Pantene's Foodie Journey cover">
-        <img src="/pantene-foodie-journey/assets/cover-food.png" alt="Pantene's Foodie Journey 封面圖" />
+        <img src="assets/cover-food.png" alt="Pantene's Foodie Journey 封面圖" />
       </div>
       <div class="topline">
-        <span>6:23 PM · 星期日</span>
-        <span><span class="pantene-mark"><img class="pantene-doll" src="/pantene-foodie-journey/assets/pantene-doll-cutout.png" alt="" aria-hidden="true" /><span>Pantene</span></span>'s Foodie Journey</span>
+        <span id="hk-time">香港時間 --:--</span>
+        <span><span class="pantene-mark"><img class="pantene-doll" src="assets/pantene-doll-cutout.png" alt="" aria-hidden="true" /><span>Pantene</span></span>'s Foodie Journey</span>
       </div>
-      <p class="sub">一個俾你用嘅手機系統，專放食飯靈感、隨心推介，同朋友留言。</p>
-      <div class="pill-row">
-        <span class="pill">手機優先</span>
-        <span class="pill">可分享俾朋友</span>
-        <span class="pill">隨心推介</span>
-        <span class="pill">留言互動</span>
+      <div class="hero-copy">
+        <h1 class="hero-title">今晚食咩，3 個入口即刻睇到。</h1>
+        <p class="hero-lead">Pantene 幫你用最少步驟，快速去到今日食咩、找餐廳同收藏清單。想食得快、揀得準，入嚟直接用就得。</p>
+      </div>
+      <div class="hero-actions" aria-label="主要入口">
+        <button class="hero-action" type="button" data-target="section-home">
+          <strong>今日食咩</strong>
+          <span>先睇今日推薦，再一鍵轉盤</span>
+        </button>
+        <button class="hero-action" type="button" data-target="section-places">
+          <strong>找餐廳</strong>
+          <span>一次睇 6 間餐廳同詳情</span>
+        </button>
+        <button class="hero-action" type="button" data-target="section-favorites">
+          <strong>我的收藏</strong>
+          <span>打開你留低嘅心水清單</span>
+        </button>
       </div>
     </section>
 
     <section class="content">
       <article class="card food-pick" id="section-home">
-        <div class="section-title">
-          <h2>今日食咩</h2>
-          <small>快速決策</small>
-        </div>
-        <div class="roulette-panel">
-          <div class="section-title" style="margin-bottom: 8px;">
-            <h3 style="font-size: 16px;">俄羅斯輪盤試食</h3>
-            <small id="roulette-status">等你撳一下，睇吓今晚轉到咩類別。</small>
-          </div>
-          <div class="roulette-stage">
-            <div class="roulette-needle">▼</div>
-            <div class="roulette-wheel" id="roulette-wheel">
-              <div class="roulette-core" id="roulette-core">
-                <strong id="roulette-result">按「試下」開轉</strong>
-                <small id="roulette-sub">2 秒之後停低，直接出結果。</small>
+        <div class="home-grid">
+          <div class="home-intro">
+            <div class="section-title">
+              <h2>今日食咩</h2>
+              <small>10 秒內有方向</small>
+            </div>
+            <div class="home-highlight">
+              <div class="highlight-card">
+                <strong>今天最想要</strong>
+                <span>先睇今日推薦，唔使慢慢搵。</span>
+              </div>
+              <div class="highlight-card">
+                <strong>找餐廳</strong>
+                <span>即刻睇 6 間推介同地區資料。</span>
+              </div>
+              <div class="highlight-card">
+                <strong>我的收藏</strong>
+                <span>保存好想試嘅餐廳同靈感。</span>
               </div>
             </div>
-            <div class="roulette-actions">
-              <button class="action-btn" type="button" id="roulette-spin">
-                <strong>試下</strong>
-                <span>轉 2 秒，睇吓今晚輪到邊類</span>
-              </button>
+          </div>
+          <div class="panel-split">
+            <div class="roulette-panel">
+              <div class="section-title" style="margin-bottom: 8px;">
+                <h3>幫我揀</h3>
+                <small id="roulette-status">等你撳一下，睇吓今晚轉到咩類別。</small>
+              </div>
+              <div class="roulette-stage">
+                <div class="roulette-needle">▼</div>
+                <div class="roulette-wheel" id="roulette-wheel">
+                  <div class="roulette-core" id="roulette-core">
+                    <strong id="roulette-result">按「試下」開轉</strong>
+                    <small id="roulette-sub">2 秒之後停低，直接出結果。</small>
+                  </div>
+                </div>
+                <div class="roulette-actions">
+                  <button class="action-btn" type="button" id="roulette-spin">
+                    <strong>試下</strong>
+                    <span>轉 2 秒，睇吓今晚輪到邊類</span>
+                  </button>
+                </div>
+              </div>
+              <div class="roulette-legend" id="roulette-legend"></div>
+              <div class="action-row" style="margin-top: 14px;">
+                <button class="action-btn" type="button" id="favorite-food">
+                  <strong>收藏結果</strong>
+                  <span>放入最想試清單</span>
+                </button>
+              </div>
+            </div>
+            <div class="decision-box">
+              <div class="decision-label">今日推薦</div>
+              <p class="decision" id="food-suggestion">日式丼飯 + 熱湯</p>
+              <div class="decision-meta" id="food-note">適合想食得舒服又唔太重口味。可加條件：附近、平價、打卡、宵夜。</div>
+              <div class="action-row">
+                <button class="action-btn" type="button" id="shuffle-food">
+                  <strong>再試一次</strong>
+                  <span>換另一個轉盤結果</span>
+                </button>
+                <button class="action-btn" type="button" id="roulette-bingo">
+                  <strong>鎖定主題</strong>
+                  <span>保留而家呢個類別</span>
+                </button>
+              </div>
             </div>
           </div>
-          <div class="roulette-legend" id="roulette-legend"></div>
-          <div class="action-row" style="margin-top: 14px;">
-            <button class="action-btn" type="button" id="favorite-food">
-              <strong>收藏結果</strong>
-              <span>放入最想試清單</span>
-            </button>
-          </div>
         </div>
-        <div class="decision-box">
-          <div class="decision-label">今日推薦</div>
-          <p class="decision" id="food-suggestion">日式丼飯 + 熱湯</p>
-          <div class="decision-meta" id="food-note">適合想食得舒服又唔太重口味。可加條件：附近、平價、打卡、宵夜。</div>
-          <div class="action-row">
-            <button class="action-btn" type="button" id="shuffle-food">
-              <strong>再試一次</strong>
-              <span>換另一個轉盤結果</span>
-            </button>
-            <button class="action-btn" type="button" id="roulette-bingo">
-              <strong>鎖定主題</strong>
-              <span>保留而家呢個類別</span>
-            </button>
-          </div>
-        </div>
-        <div class="mini-list" id="favorite-foods"></div>
       </article>
 
       <article class="card" id="section-places">
         <div class="section-title">
-          <h2><span class="pantene-mark"><img class="pantene-doll" src="/pantene-foodie-journey/assets/pantene-doll-cutout.png" alt="" aria-hidden="true" /><span>Pantene</span></span> 隨心推介</h2>
+          <h2><span class="pantene-mark"><img class="pantene-doll" src="assets/pantene-doll-cutout.png" alt="" aria-hidden="true" /><span>Pantene</span></span> 隨心推介</h2>
           <small>一次抽 6 間，按掣再推介</small>
         </div>
         <div class="action-row" style="margin-bottom: 14px;">
@@ -885,9 +1132,43 @@
         <div class="place-grid" id="place-grid"></div>
       </article>
 
+      <article class="card" id="section-favorites">
+        <div class="section-title">
+          <h2>我的收藏</h2>
+          <small>已存低的心水清單</small>
+        </div>
+        <p class="sub" style="margin-bottom: 12px;">收藏會保留你最想試嘅餐廳同食法，之後可以再加備註，慢慢砌成自己嘅清單。</p>
+        <div class="mini-list" id="favorite-foods"></div>
+      </article>
+
+      <article class="card" id="section-profile">
+        <div class="section-title">
+          <h2>我的</h2>
+          <small>快速狀態</small>
+        </div>
+        <div class="profile-grid">
+          <div class="profile-stat">
+            <strong id="profile-favorites-count">1</strong>
+            <span>收藏中餐廳 / 食法</span>
+          </div>
+          <div class="profile-stat">
+            <strong id="profile-recommendation-count">6</strong>
+            <span>目前推介數量</span>
+          </div>
+        </div>
+        <div class="mini-list" style="margin-top: 12px;">
+          <div class="mini-list-item">
+            <div>
+              <strong>使用方式</strong>
+              <small>由首頁開始，再去探索 / 收藏 / 留言。</small>
+            </div>
+          </div>
+        </div>
+      </article>
+
       <article class="card place-detail" id="section-place-detail">
         <div class="section-title">
-          <h2><span class="pantene-mark"><img class="pantene-doll" src="/pantene-foodie-journey/assets/pantene-doll-cutout.png" alt="" aria-hidden="true" /><span>Pantene</span></span> 推介 詳情</h2>
+          <h2><span class="pantene-mark"><img class="pantene-doll" src="assets/pantene-doll-cutout.png" alt="" aria-hidden="true" /><span>Pantene</span></span> 推介 詳情</h2>
           <small>撳入去睇餐廳資料</small>
         </div>
         <div id="place-detail-body"></div>
@@ -922,30 +1203,15 @@
           </div>
         </form>
         <div class="stream" id="comment-stream"></div>
-        <div class="comment">
-          <div class="avatar">A</div>
-          <div>
-            <strong>阿欣</strong>
-            <p>呢間真係好啱拍拖食，下次試埋甜品！</p>
-            <time>2 小時前</time>
-          </div>
-        </div>
-        <div class="comment">
-          <div class="avatar">M</div>
-          <div>
-            <strong>Me</strong>
-            <p>呢版好舒服，睇落就好想用。</p>
-            <time>剛剛</time>
-          </div>
-        </div>
       </article>
     </section>
 
     <nav class="bottom-nav" aria-label="Bottom navigation">
-      <button class="nav-item active" type="button" data-target="section-home"><span class="nav-icon">⌂</span>Home</button>
-      <button class="nav-item" type="button" data-target="section-food"><span class="nav-icon">🍜</span>食咩</button>
-      <button class="nav-item" type="button" data-target="section-places"><span class="nav-icon">📍</span><span class="pantene-mark"><img class="pantene-doll" src="/pantene-foodie-journey/assets/pantene-doll-cutout.png" alt="" aria-hidden="true" /><span>Pantene</span></span></button>
-      <button class="nav-item" type="button" data-target="section-comments"><span class="nav-icon">♥</span>留言</button>
+      <button class="nav-item active" type="button" data-target="section-home"><span class="nav-icon">⌂</span>首頁</button>
+      <button class="nav-item" type="button" data-target="section-places"><span class="nav-icon">📍</span>探索</button>
+      <button class="nav-item" type="button" data-target="section-help"><span class="nav-icon">🎯</span>幫我揀</button>
+      <button class="nav-item" type="button" data-target="section-favorites"><span class="nav-icon">♥</span>收藏</button>
+      <button class="nav-item" type="button" data-target="section-profile"><span class="nav-icon">☺</span>我的</button>
     </nav>
   </main>
 
@@ -1139,6 +1405,8 @@
     const favoriteBtn = document.getElementById('favorite-food');
     const rerollPlacesBtn = document.getElementById('reroll-places');
     const favoriteFoodsEl = document.getElementById('favorite-foods');
+    const hkTimeEl = document.getElementById('hk-time');
+    const heroActionButtons = Array.from(document.querySelectorAll('.hero-action'));
     const placeGrid = document.getElementById('place-grid');
     const placeDetailSection = document.getElementById('section-place-detail');
     const placeDetailBody = document.getElementById('place-detail-body');
@@ -1147,10 +1415,52 @@
     const navItems = Array.from(document.querySelectorAll('.nav-item'));
     const sections = Array.from(document.querySelectorAll('article.card'));
     const foodCard = document.querySelector('.food-pick');
+    const profileFavoritesCount = document.getElementById('profile-favorites-count');
+    const profileRecommendationCount = document.getElementById('profile-recommendation-count');
     let activePlaceIndex = 0;
     let currentRouletteIndex = 0;
     let spinning = false;
     let spinTimer = null;
+
+    function formatHongKongTime(date = new Date()) {
+      return new Intl.DateTimeFormat('zh-HK', {
+        timeZone: 'Asia/Hong_Kong',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).format(date);
+    }
+
+    function updateHongKongTime() {
+      if (hkTimeEl) {
+        hkTimeEl.textContent = `香港時間 ${formatHongKongTime()}`;
+      }
+    }
+
+    function scrollToAppTarget(targetId) {
+      if (targetId === 'section-home') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      if (targetId === 'section-help') {
+        foodCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      if (targetId === 'section-places') {
+        document.getElementById('section-places').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      if (targetId === 'section-favorites') {
+        document.getElementById('section-favorites').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      if (targetId === 'section-profile') {
+        document.getElementById('section-profile').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      const target = document.getElementById(targetId);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
 
     function syncRouletteCore() {
       rouletteCore.style.transform = `rotate(${-rouletteRotation}deg)`;
@@ -1164,7 +1474,7 @@
     }
 
     function panteneMarkHtml(label = 'Pantene', large = false) {
-      return `<span class="pantene-mark ${large ? 'pantene-mark--large' : ''}"><img class="pantene-doll" src="/pantene-foodie-journey/assets/pantene-doll-cutout.png" alt="" aria-hidden="true" /><span>${label}</span></span>`;
+      return `<span class="pantene-mark ${large ? 'pantene-mark--large' : ''}"><img class="pantene-doll" src="assets/pantene-doll-cutout.png" alt="" aria-hidden="true" /><span>${label}</span></span>`;
     }
     let rouletteTimer = null;
     let rouletteRotation = 0;
@@ -1444,6 +1754,8 @@
       renderFood(state.currentFood || 0);
       setRouletteResult(state.currentFood || 0, 'ready');
       normalizeRecommendations();
+      if (profileFavoritesCount) profileFavoritesCount.textContent = String(state.favorites.length);
+      if (profileRecommendationCount) profileRecommendationCount.textContent = String(Math.min(6, state.places.length));
       renderMiniList(
         favoriteFoodsEl,
         state.favorites,
@@ -1465,20 +1777,22 @@
 
     function setActiveNav(targetId) {
       navItems.forEach((item) => item.classList.toggle('active', item.dataset.target === targetId));
-      const showAll = targetId === 'section-home' || targetId === 'section-food';
+      const showAll = targetId === 'section-home' || targetId === 'section-help';
       sections.forEach((section) => {
         const visible = section.id === 'section-place-detail'
           ? placeDetailSection.classList.contains('active')
           : (showAll || section.id === targetId);
         section.style.display = visible ? 'block' : 'none';
       });
-      foodCard.classList.toggle('focused', targetId === 'section-food');
+      foodCard.classList.toggle('focused', targetId === 'section-help');
       if (targetId !== 'section-places') {
         placeDetailSection.classList.remove('active');
       }
       if (targetId === 'section-home') window.scrollTo({ top: 0, behavior: 'smooth' });
-      if (targetId === 'section-food') foodCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (targetId === 'section-help') foodCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
       if (targetId === 'section-places') document.getElementById('section-places').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (targetId === 'section-favorites') document.getElementById('section-favorites').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (targetId === 'section-profile') document.getElementById('section-profile').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     shuffleBtn.addEventListener('click', () => {
@@ -1522,12 +1836,20 @@
     navItems.forEach((item) => {
       item.addEventListener('click', () => {
         setActiveNav(item.dataset.target);
-        if (item.dataset.target !== 'section-home' && item.dataset.target !== 'section-food') {
-          document.getElementById(item.dataset.target).scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        scrollToAppTarget(item.dataset.target);
       });
     });
 
+    heroActionButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const target = button.dataset.target;
+        setActiveNav(target);
+        scrollToAppTarget(target);
+      });
+    });
+
+    updateHongKongTime();
+    setInterval(updateHongKongTime, 30000);
     hydratePanteneDolls();
     renderAll();
     setActiveNav('section-home');
