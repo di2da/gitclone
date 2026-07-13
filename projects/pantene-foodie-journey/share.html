@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#fff4ea" />
   <title>Pantene's Foodie Journey</title>
+  <meta name="description" content="Pantene's Foodie Journey - 餐廳卡片、詳情、收藏同分享連結。" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Pantene's Foodie Journey" />
+  <meta property="og:description" content="Pantene's Foodie Journey - 餐廳卡片、詳情、收藏同分享連結。" />
+  <meta property="og:image" content="/pantene-foodie-journey/assets/cover-food.png" />
+  <meta property="og:url" content="" id="og-url" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Pantene's Foodie Journey" />
+  <meta name="twitter:description" content="Pantene's Foodie Journey - 餐廳卡片、詳情、收藏同分享連結。" />
+  <meta name="twitter:image" content="/pantene-foodie-journey/assets/cover-food.png" />
+  <link rel="canonical" href="" id="canonical-link" />
   <style>
     :root {
       --bg1: #fff9f3;
@@ -329,6 +340,91 @@
       line-height: 1.45;
       color: #3b342e;
     }
+    .card-media {
+      position: relative;
+      overflow: hidden;
+      border-radius: 16px;
+      margin-bottom: 10px;
+      background: linear-gradient(135deg, rgba(255,179,138,0.24), rgba(255,255,255,0.92));
+      aspect-ratio: 16 / 10;
+      box-shadow: inset 0 0 0 1px rgba(36,36,36,0.06);
+    }
+    .card-media.is-loading::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(255,255,255,0.42), rgba(255,255,255,0.12), rgba(255,255,255,0.42));
+      background-size: 200% 100%;
+      animation: shimmer 1.15s linear infinite;
+    }
+    .card-media.is-broken {
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 12px;
+    }
+    .card-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .place-summary {
+      display: grid;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .meta-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 999px;
+      padding: 6px 9px;
+      font-size: 12px;
+      font-weight: 700;
+      background: rgba(255,255,255,0.88);
+      color: #5d4b3e;
+      border: 1px solid rgba(36,36,36,0.08);
+    }
+    .chip-soft {
+      background: rgba(255,227,163,0.34);
+    }
+    .card-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .action-mini {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 9px 11px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      background: rgba(255,255,255,0.9);
+      color: #55381f;
+      box-shadow: inset 0 0 0 1px rgba(36,36,36,0.08);
+    }
+    .action-mini.primary {
+      background: linear-gradient(135deg, #ffb38a, #ffe3a3);
+      color: #27150a;
+    }
     .place-card .detail-link {
       display: inline-flex;
       align-items: center;
@@ -337,6 +433,81 @@
       font-size: 12px;
       font-weight: 700;
       color: #8f531e;
+    }
+    .detail-kicker {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .detail-grid {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .detail-section {
+      background: rgba(255,255,255,0.84);
+      border: 1px solid rgba(36,36,36,0.08);
+      border-radius: 16px;
+      padding: 12px 13px;
+    }
+    .detail-section strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+    .detail-section span,
+    .detail-section time,
+    .detail-section a {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .detail-links {
+      display: grid;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .detail-links a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      text-decoration: none;
+      background: rgba(255,255,255,0.92);
+      border: 1px solid rgba(36,36,36,0.08);
+      color: #8f531e;
+      font-weight: 800;
+    }
+    .share-box {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .share-url {
+      font-size: 12px;
+      color: var(--muted);
+      word-break: break-all;
+      background: rgba(255,255,255,0.82);
+      border: 1px dashed rgba(36,36,36,0.12);
+      border-radius: 14px;
+      padding: 10px 12px;
+    }
+    .empty-detail,
+    .not-found {
+      background: rgba(255,255,255,0.84);
+      border: 1px dashed rgba(36,36,36,0.12);
+      border-radius: 18px;
+      padding: 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @keyframes shimmer {
+      0% { background-position: 100% 0; }
+      100% { background-position: 0 0; }
     }
     .place-detail {
       display: none;
@@ -855,6 +1026,164 @@
       rouletteCore.style.transform = `rotate(${-rouletteRotation}deg)`;
     }
 
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function toSafeText(value) {
+      return String(value ?? '').trim();
+    }
+
+    function formatPriceRange(place) {
+      const min = Number(place.priceMin);
+      const max = Number(place.priceMax);
+      if (Number.isFinite(min) && Number.isFinite(max)) {
+        return min === max ? `約 HK$${min}` : `HK$${min} - HK$${max}`;
+      }
+      if (Number.isFinite(min)) return `起 HK$${min}`;
+      if (Number.isFinite(max)) return `最高 HK$${max}`;
+      return '';
+    }
+
+    function buildShareUrl(place) {
+      return `${SHARE_BASE_URL}?${SHARE_QUERY_KEY}=${encodeURIComponent(place.id)}`;
+    }
+
+    function buildMapsUrl(place) {
+      const placeName = [place.nameZh, place.branchName, place.district].filter(Boolean).join(' ');
+      if (place.googlePlaceId) {
+        const query = place.address || placeName || place.googlePlaceId;
+        return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}&query_place_id=${encodeURIComponent(place.googlePlaceId)}`;
+      }
+      if (place.address) {
+        return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.address)}`;
+      }
+      return '';
+    }
+
+    function safeExternalUrl(url) {
+      if (!url) return '';
+      try {
+        const parsed = new URL(url, location.href);
+        return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '';
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function formatOpeningHours(value) {
+      if (Array.isArray(value)) {
+        return value
+          .map((item) => {
+            if (typeof item === 'string') return item.trim();
+            if (!item || typeof item !== 'object') return '';
+            const parts = [item.day, item.open && item.close ? `${item.open} - ${item.close}` : item.open || item.close, item.note]
+              .map(toSafeText)
+              .filter(Boolean);
+            return parts.join(' · ');
+          })
+          .filter(Boolean);
+      }
+      if (value && typeof value === 'object') {
+        return Object.entries(value)
+          .map(([day, hours]) => [day, hours && hours.open && hours.close ? `${hours.open} - ${hours.close}` : hours && (hours.open || hours.close), hours && hours.note]
+            .map(toSafeText)
+            .filter(Boolean)
+            .join(' · '))
+          .filter(Boolean);
+      }
+      const text = toSafeText(value);
+      return text ? [text] : [];
+    }
+
+    function renderTags(items) {
+      return (Array.isArray(items) ? items : [])
+        .filter(Boolean)
+        .slice(0, 3)
+        .map((item) => `<span class="chip chip-soft">${escapeHtml(item)}</span>`)
+        .join('');
+    }
+
+    function wireMedia(scope) {
+      scope.querySelectorAll('.card-media img').forEach((img) => {
+        const media = img.closest('.card-media');
+        const fallback = img.dataset.fallback || DEFAULT_COVER;
+        const finish = (state) => {
+          if (!media) return;
+          media.classList.remove('is-loading');
+          media.classList.toggle('is-broken', state === 'error');
+          if (state === 'error') media.textContent = '圖片載入失敗，已用預設封面。';
+        };
+        img.addEventListener('load', () => finish('load'));
+        img.addEventListener('error', () => {
+          if (img.dataset.fallbackApplied === '1') {
+            finish('error');
+            return;
+          }
+          img.dataset.fallbackApplied = '1';
+          img.src = fallback;
+        });
+        if (img.complete) {
+          if (img.naturalWidth > 0) finish('load');
+          else img.dispatchEvent(new Event('error'));
+        }
+      });
+    }
+
+    function updateMetaForPlace(place) {
+      const title = place ? `${place.nameZh}${place.branchName ? ` · ${place.branchName}` : ''} | Pantene's Foodie Journey` : "Pantene's Foodie Journey";
+      const description = place
+        ? [place.district, place.cuisine, place.panteneNote || place.why || place.description].filter(Boolean).join(' · ')
+        : "Pantene's Foodie Journey - 餐廳卡片、詳情、收藏同分享連結。";
+      const image = safeExternalUrl(place && (place.coverImage || DEFAULT_COVER)) || DEFAULT_COVER;
+      const url = place ? buildShareUrl(place) : SHARE_BASE_URL;
+      document.title = title;
+      [
+        ['meta[property="og:title"]', title],
+        ['meta[property="og:description"]', description],
+        ['meta[property="og:image"]', image],
+        ['meta[property="og:url"]', url],
+        ['meta[name="twitter:title"]', title],
+        ['meta[name="twitter:description"]', description],
+        ['meta[name="twitter:image"]', image],
+        ['meta[name="description"]', description],
+      ].forEach(([selector, content]) => {
+        const el = document.querySelector(selector);
+        if (el) el.setAttribute('content', content);
+      });
+      if (canonicalLink) canonicalLink.href = url;
+      if (ogUrlMeta) ogUrlMeta.setAttribute('content', url);
+    }
+
+    function toggleFavorite(place, button) {
+      const current = new Set(JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'));
+      if (current.has(place.id)) {
+        current.delete(place.id);
+      } else {
+        current.add(place.id);
+      }
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(Array.from(current)));
+      if (button) {
+        const saved = current.has(place.id);
+        button.textContent = saved ? '已收藏' : '收藏';
+        button.classList.toggle('primary', saved);
+      }
+    }
+
+    function isFavorited(place) {
+      try {
+        const current = new Set(JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'));
+        return current.has(place.id);
+      } catch (_) {
+        return false;
+      }
+    }
+
     function hydratePanteneDolls() {
       document.querySelectorAll('.pantene-doll').forEach((img) => {
         img.loading = 'eager';
@@ -927,62 +1256,163 @@
       if (!recommendedPlaces.length) {
         placeGrid.innerHTML = `<div class="empty-note">${PanteneRestaurantModel.getEmptyStateMessage('public')}</div>`;
       } else {
-        placeGrid.innerHTML = recommendedPlaces.map((place, index) => `
-          <button class="place-card" type="button" data-index="${index}">
-            <header><strong>${place.name}</strong><span>${place.area}</span></header>
-            <p>${place.note}</p>
-            <span class="badge">已核實</span>
-            <span class="detail-link">查看詳情 →</span>
-          </button>
-        `).join('');
-        Array.from(placeGrid.querySelectorAll('.place-card')).forEach((button) => {
-          button.addEventListener('click', () => {
-            renderPlaceDetail(recommendedPlaces[Number(button.dataset.index)]);
+        placeGrid.innerHTML = recommendedPlaces.map((place, index) => {
+          const cover = place.coverImage || DEFAULT_COVER;
+          const price = formatPriceRange(place);
+          const chips = renderTags(place.suitableOccasions);
+          const favoriteSaved = isFavorited(place);
+          return `
+          <article class="place-card" data-index="${index}" data-place-id="${escapeHtml(place.id)}">
+            <div class="card-media is-loading">
+              <img src="${escapeHtml(cover)}" alt="${escapeHtml(place.nameZh)} 封面相" loading="lazy" data-fallback="${DEFAULT_COVER}" />
+            </div>
+            <header>
+              <strong>${escapeHtml(place.nameZh)}</strong>
+              <span>${escapeHtml(place.branchName || place.district || '')}</span>
+            </header>
+            <div class="place-summary">
+              <div class="meta-line">
+                ${place.cuisine ? `<span>菜式：${escapeHtml(place.cuisine)}</span>` : ''}
+                ${place.district ? `<span>地區：${escapeHtml(place.district)}</span>` : ''}
+                ${price ? `<span>人均：${escapeHtml(price)}</span>` : ''}
+              </div>
+              <div class="chip-row">
+                ${chips}
+              </div>
+              <p>${escapeHtml(place.panteneNote || place.why || place.note || '')}</p>
+            </div>
+            <div class="card-actions">
+              <button class="action-mini primary" type="button" data-action="detail">查看詳情</button>
+              <button class="action-mini ${favoriteSaved ? 'primary' : ''}" type="button" data-action="favorite">${favoriteSaved ? '已收藏' : '收藏'}</button>
+            </div>
+          </article>`;
+        }).join('');
+        wireMedia(placeGrid);
+        Array.from(placeGrid.querySelectorAll('.place-card')).forEach((card) => {
+          const index = Number(card.dataset.index);
+          const place = recommendedPlaces[index];
+          card.querySelector('[data-action="detail"]').addEventListener('click', () => {
+            renderPlaceDetail(place);
+            placeDetail.classList.add('active');
             placeDetail.scrollIntoView({ behavior: 'smooth', block: 'start' });
           });
+          card.querySelector('[data-action="favorite"]').addEventListener('click', (event) => {
+            event.stopPropagation();
+            toggleFavorite(place, event.currentTarget);
+          });
         });
+      }
+      const selectedId = new URLSearchParams(location.search).get(SHARE_QUERY_KEY);
+      if (selectedId) {
+        const fromQuery = publicRestaurants.find((place) => place.id === selectedId) || recommendedPlaces.find((place) => place.id === selectedId);
+        placeDetail.classList.add('active');
+        renderPlaceDetail(fromQuery || null);
       }
     }
 
     function renderPlaceDetail(place) {
-      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.mapQuery)}`;
+      if (!place) {
+        placeDetailBody.innerHTML = `
+          <div class="not-found">
+            <strong>搵唔到呢間餐廳</strong>
+            <span>可能網址已經過期，或者呢間餐廳未有公開資料。</span>
+            <div class="detail-actions">
+              <button class="detail-btn" type="button" id="back-to-places">返回清單</button>
+            </div>
+          </div>
+        `;
+        document.getElementById('back-to-places').addEventListener('click', () => {
+          placeDetail.classList.remove('active');
+          document.querySelector('.place-grid').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+        updateMetaForPlace(null);
+        return;
+      }
+
+      const mapsUrl = buildMapsUrl(place);
+      const bookingUrl = safeExternalUrl(place.bookingUrl);
+      const officialUrl = safeExternalUrl(place.officialUrl);
+      const instagramUrl = safeExternalUrl(place.instagramUrl);
+      const phoneUrl = place.phone ? `tel:${place.phone.replace(/[^\d+]/g, '')}` : '';
+      const shareUrl = buildShareUrl(place);
+      const openingHours = formatOpeningHours(place.openingHours);
+      const occasions = Array.isArray(place.suitableOccasions) ? place.suitableOccasions.filter(Boolean).slice(0, 3) : [];
+      const signatureDishes = Array.isArray(place.signatureDishes) ? place.signatureDishes.filter(Boolean) : [];
+      const transportHint = toSafeText(place.transportHint || place.transportNotes || place.transitHint);
+      const sourceUrl = safeExternalUrl(place.sourceUrl);
+      const verifiedAt = toSafeText(place.verifiedAt || place.updatedAt || '');
+      const price = formatPriceRange(place);
+      const address = toSafeText(place.address);
+      const nameLine = [place.nameZh, place.branchName].filter(Boolean).join(' · ');
+      const summary = [place.district, place.cuisine, price].filter(Boolean).join(' · ');
+      const sections = [];
+      if (address) sections.push(`<div class="detail-section"><strong>地址</strong><span>${escapeHtml(address)}</span></div>`);
+      if (transportHint) sections.push(`<div class="detail-section"><strong>港鐵／交通提示</strong><span>${escapeHtml(transportHint)}</span></div>`);
+      if (openingHours.length) sections.push(`<div class="detail-section"><strong>營業時間</strong><span>${openingHours.map(escapeHtml).join('<br />')}</span></div>`);
+      if (place.phone) sections.push(`<div class="detail-section"><strong>電話</strong><span>${escapeHtml(place.phone)}</span></div>`);
+      if (price) sections.push(`<div class="detail-section"><strong>人均消費</strong><span>${escapeHtml(price)}</span></div>`);
+      if (signatureDishes.length) sections.push(`<div class="detail-section"><strong>招牌菜</strong><span>${signatureDishes.map(escapeHtml).join('、')}</span></div>`);
+      if (occasions.length) sections.push(`<div class="detail-section"><strong>適合場合</strong><div class="chip-row">${occasions.map((item) => `<span class="chip chip-soft">${escapeHtml(item)}</span>`).join('')}</div></div>`);
+      if (place.panteneNote || place.why) sections.push(`<div class="detail-section"><strong>Pantene 私人備註</strong><span>${escapeHtml(place.panteneNote || place.why)}</span></div>`);
+      if (sourceUrl) sections.push(`<div class="detail-section"><strong>資料來源</strong><a href="${sourceUrl}" target="_blank" rel="noopener noreferrer">打開來源連結</a></div>`);
+      if (verifiedAt) sections.push(`<div class="detail-section"><strong>最後核實日期</strong><time>${escapeHtml(verifiedAt)}</time></div>`);
       placeDetailBody.innerHTML = `
         <div class="place-detail-head">
           <div>
-            <h3>${place.name}</h3>
-            <p>${place.area}</p>
+            <h3>${escapeHtml(nameLine || place.nameZh)}</h3>
+            <p>${escapeHtml(summary || place.district || '')}</p>
           </div>
-          <span class="badge">${panteneMarkHtml('Pantene 推介')}</span>
+          <div style="display:grid;gap:8px;justify-items:end;">
+            <span class="badge">${panteneMarkHtml('Pantene 推介')}</span>
+            <span class="badge">${place.verificationStatus === PanteneRestaurantModel.VERIFICATION_STATUS.VERIFIED ? '已核實' : '待確認'}</span>
+          </div>
         </div>
-        <div class="detail-points">
-          <div class="point-row">
-            <div>
-              <strong>適合場合</strong>
-              <span>${place.bestFor}</span>
-            </div>
+        <div class="detail-kicker">
+          ${renderTags(occasions)}
+        </div>
+        <div class="detail-grid">
+          ${sections.join('')}
+        </div>
+        <div class="detail-section" style="margin-top:14px;">
+          <strong>外部連結</strong>
+          <div class="detail-links">
+            ${mapsUrl ? `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer">Google Maps <span>→</span></a>` : ''}
+            ${bookingUrl ? `<a href="${bookingUrl}" target="_blank" rel="noopener noreferrer">訂座 <span>→</span></a>` : ''}
+            ${officialUrl ? `<a href="${officialUrl}" target="_blank" rel="noopener noreferrer">官方網站 <span>→</span></a>` : ''}
+            ${instagramUrl ? `<a href="${instagramUrl}" target="_blank" rel="noopener noreferrer">Instagram <span>→</span></a>` : ''}
+            ${phoneUrl ? `<a href="${phoneUrl}" rel="noopener noreferrer">致電餐廳 <span>→</span></a>` : ''}
           </div>
-          <div class="point-row">
-            <div>
-              <strong>介紹</strong>
-              <span>${place.why}</span>
-            </div>
-          </div>
-          <div class="point-row">
-            <div>
-              <strong>備註</strong>
-              <span>${place.note}</span>
-            </div>
-          </div>
+        </div>
+        <div class="share-box">
+          <div class="share-url">${escapeHtml(shareUrl)}</div>
         </div>
         <div class="detail-actions">
           <button class="detail-btn" type="button" id="back-to-places">返回清單</button>
-          <a class="detail-link-btn" href="${mapsUrl}" target="_blank" rel="noopener noreferrer">開 Google Maps</a>
+          <button class="detail-btn" type="button" id="copy-share-url">複製分享連結</button>
+          ${mapsUrl ? `<a class="detail-link-btn" href="${mapsUrl}" target="_blank" rel="noopener noreferrer">開 Google Maps</a>` : ''}
         </div>
       `;
       placeDetail.classList.add('active');
+      updateMetaForPlace(place);
+      history.replaceState(null, '', shareUrl);
+      wireMedia(placeDetailBody);
       document.getElementById('back-to-places').addEventListener('click', () => {
         placeDetail.classList.remove('active');
+        history.replaceState(null, '', SHARE_BASE_URL);
+        updateMetaForPlace(null);
         document.querySelector('.place-grid').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      document.getElementById('copy-share-url').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          const button = document.getElementById('copy-share-url');
+          button.textContent = '已複製';
+          setTimeout(() => { button.textContent = '複製分享連結'; }, 1500);
+        } catch (_) {
+          const button = document.getElementById('copy-share-url');
+          button.textContent = '複製失敗';
+          setTimeout(() => { button.textContent = '複製分享連結'; }, 1500);
+        }
       });
     }
 
@@ -991,6 +1421,7 @@
     buildRouletteWheel();
     setRouletteResult(0, 'ready');
     syncRouletteCore();
+    updateMetaForPlace(null);
     renderAll();
     rouletteSpinBtn.addEventListener('click', spinRoulette);
     rouletteBingoBtn.addEventListener('click', () => {
