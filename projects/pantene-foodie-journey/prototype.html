@@ -562,6 +562,222 @@
       background: linear-gradient(135deg, #ffb38a, #ffe3a3);
       color: #27150a;
     }
+    .action-mini.is-saved {
+      background: rgba(167,223,196,0.26);
+      color: #23553b;
+      box-shadow: inset 0 0 0 1px rgba(35,85,59,0.12);
+    }
+    .collection-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      background: rgba(167,223,196,0.24);
+      color: #23553b;
+      border: 1px solid rgba(35,85,59,0.12);
+    }
+    .collection-panel {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(255,248,240,0.92));
+      border: 1px solid rgba(36,36,36,0.08);
+    }
+    .collection-panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .collection-panel-head strong {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 4px;
+    }
+    .collection-panel-head span {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .status-switcher {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .status-option {
+      appearance: none;
+      border: 1px solid rgba(36,36,36,0.08);
+      background: rgba(255,255,255,0.92);
+      border-radius: 16px;
+      padding: 11px 12px;
+      text-align: left;
+      cursor: pointer;
+      font-weight: 800;
+      color: #2f241c;
+      display: grid;
+      gap: 3px;
+      min-height: 62px;
+    }
+    .status-option small {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .status-option.active {
+      background: linear-gradient(135deg, rgba(255,179,138,0.85), rgba(255,227,163,0.9));
+      color: #27150a;
+      border-color: rgba(143,83,30,0.18);
+    }
+    .collection-notes {
+      display: grid;
+      gap: 10px;
+    }
+    .note-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .note-field {
+      display: grid;
+      gap: 6px;
+    }
+    .note-field span {
+      font-size: 12px;
+      font-weight: 800;
+      color: #43362a;
+    }
+    .note-field textarea,
+    .note-field input {
+      width: 100%;
+      border: 1px solid rgba(36,36,36,0.12);
+      border-radius: 14px;
+      padding: 10px 11px;
+      font: inherit;
+      font-size: 13px;
+      color: var(--text);
+      background: rgba(255,255,255,0.96);
+      outline: none;
+    }
+    .note-field textarea {
+      min-height: 72px;
+      resize: vertical;
+    }
+    .collection-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .collection-helper {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .custom-list-box {
+      display: grid;
+      gap: 10px;
+    }
+    .custom-list-toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .custom-list-toolbar input {
+      flex: 1 1 220px;
+      border: 1px solid rgba(36,36,36,0.12);
+      border-radius: 14px;
+      padding: 10px 11px;
+      font: inherit;
+      font-size: 13px;
+      background: rgba(255,255,255,0.96);
+      color: var(--text);
+    }
+    .custom-list-toolbar button,
+    .collection-actions button {
+      border: 0;
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-weight: 800;
+      cursor: pointer;
+      background: linear-gradient(135deg, #ffb38a, #ffe3a3);
+      color: #27150a;
+    }
+    .custom-list-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .custom-list-item {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255,255,255,0.9);
+      border: 1px solid rgba(36,36,36,0.08);
+      border-radius: 14px;
+      padding: 10px 12px;
+    }
+    .custom-list-item button {
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      font: inherit;
+    }
+    .custom-list-main {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .custom-list-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: rgba(255,255,255,0.94);
+      border: 1px solid rgba(36,36,36,0.08);
+      color: #523626;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .custom-list-toggle.active {
+      background: rgba(167,223,196,0.28);
+      border-color: rgba(35,85,59,0.14);
+      color: #23553b;
+    }
+    .custom-list-toggle small {
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .list-delete-btn {
+      color: #9a4d23;
+      font-weight: 800;
+    }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translateX(-50%) translateY(18px);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 30;
+      background: rgba(37,32,29,0.96);
+      color: #fff;
+      padding: 11px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      box-shadow: 0 14px 30px rgba(0,0,0,0.22);
+      transition: opacity .2s ease, transform .2s ease;
+    }
+    .toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
 
     .place-card .detail-link {
       display: inline-flex;
@@ -982,6 +1198,26 @@
       color: #9a8f84;
     }
 
+    @media (max-width: 699px) {
+      .status-switcher,
+      .note-grid {
+        grid-template-columns: 1fr;
+      }
+      .collection-panel-head,
+      .custom-list-item {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .custom-list-toolbar {
+        flex-direction: column;
+      }
+      .custom-list-toolbar input,
+      .custom-list-toolbar button,
+      .collection-actions button {
+        width: 100%;
+      }
+    }
+
     .bottom-nav {
       position: fixed;
       left: 50%;
@@ -1180,6 +1416,7 @@
     }
   </style>
   <script src="/pantene-foodie-journey/assets/restaurant-model.js"></script>
+  <script src="/pantene-foodie-journey/assets/restaurant-collection-store.js"></script>
 </head>
 <body>
   <main class="phone">
@@ -1643,6 +1880,9 @@
     }
     let rouletteTimer = null;
     let rouletteRotation = 0;
+    const collectionStore = PanteneRestaurantCollectionStore.createStore({
+      storageKey: PanteneRestaurantCollectionStore.STORAGE_KEY,
+    });
 
     function loadState() {
       try {
@@ -1660,9 +1900,29 @@
     }
 
     let state = loadState();
+    let currentDetailPlaceId = null;
+    let toastTimer = null;
 
     function saveState() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function showToast(message) {
+      let toast = document.getElementById('save-toast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'save-toast';
+        toast.className = 'toast';
+        toast.setAttribute('role', 'status');
+        toast.setAttribute('aria-live', 'polite');
+        document.body.appendChild(toast);
+      }
+      toast.textContent = message;
+      toast.classList.add('visible');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('visible');
+      }, 1700);
     }
 
     function shuffleArray(items) {
@@ -1885,6 +2145,171 @@
         .join('');
     }
 
+    function getPlaceById(placeId) {
+      return state.places.find((place) => place.id === placeId) || null;
+    }
+
+    function getCurrentCollection(placeId) {
+      return collectionStore.getRestaurant(placeId);
+    }
+
+    function openPlaceDetail(place) {
+      currentDetailPlaceId = place ? place.id : null;
+      placeDetailSection.classList.add('active');
+      renderPlaceDetail(place || null);
+    }
+
+    function closePlaceDetail() {
+      currentDetailPlaceId = null;
+      placeDetailSection.classList.remove('active');
+      updateMetaForPlace(null);
+    }
+
+    function renderCollectionPanel(place, entry) {
+      const currentStatus = entry ? entry.status : '';
+      const notes = entry && entry.notes ? entry.notes : { dishes: '', withWho: '', occasion: '', plannedDate: '' };
+      const listIds = new Set(entry && Array.isArray(entry.listIds) ? entry.listIds : []);
+      const lists = collectionStore.getLists();
+      return `
+        <section class="collection-panel" aria-label="收藏整理">
+          <div class="collection-panel-head">
+            <div>
+              <strong>收藏整理</strong>
+              <span>可保存狀態、私人備註，同埋自訂清單。資料會留在你部機。</span>
+            </div>
+            <span class="collection-status">${escapeHtml(entry ? collectionStore.getStatusLabel(currentStatus) : '未收藏')}</span>
+          </div>
+          <div class="status-switcher" data-role="status-switcher">
+            ${PanteneRestaurantCollectionStore.STATUS_ORDER.map((status) => {
+              const meta = PanteneRestaurantCollectionStore.STATUS_META[status];
+              return `<button type="button" class="status-option ${currentStatus === status ? 'active' : ''}" data-status="${status}">
+                <strong>${escapeHtml(meta.label)}</strong>
+                <small>${escapeHtml(meta.hint)}</small>
+              </button>`;
+            }).join('')}
+          </div>
+          <div class="collection-notes">
+            <div class="note-grid">
+              <label class="note-field">
+                <span>想試菜式</span>
+                <textarea id="collection-note-dishes" placeholder="例如 招牌炭燒、限定甜品">${escapeHtml(notes.dishes || '')}</textarea>
+              </label>
+              <label class="note-field">
+                <span>同邊個去</span>
+                <input id="collection-note-withwho" type="text" placeholder="例如 老公 / 姊妹 / 同事" value="${escapeHtml(notes.withWho || '')}" />
+              </label>
+              <label class="note-field">
+                <span>適合場合</span>
+                <input id="collection-note-occasion" type="text" placeholder="例如 生日 / 約會 / 放工飯" value="${escapeHtml(notes.occasion || '')}" />
+              </label>
+              <label class="note-field">
+                <span>預計日期</span>
+                <input id="collection-note-date" type="text" placeholder="例如 2026-07 / 下星期六" value="${escapeHtml(notes.plannedDate || '')}" />
+              </label>
+            </div>
+            <div class="collection-actions">
+              <button type="button" data-action="save-notes">儲存備註</button>
+            </div>
+          </div>
+          <div class="custom-list-box">
+            <div class="collection-panel-head">
+              <div>
+                <strong>自訂清單</strong>
+                <span>例如「同老公去」、「姊妹飯局」、「生日餐廳」。</span>
+              </div>
+              <span class="collection-helper">${lists.length ? `${lists.length} 個清單` : '暫時未有清單'}</span>
+            </div>
+            <div class="custom-list-toolbar">
+              <input id="custom-list-name" type="text" placeholder="新增清單名稱" />
+              <button type="button" data-action="create-list">新增清單</button>
+            </div>
+            <div class="custom-list-grid">
+              ${lists.length ? lists.map((list) => `
+                <div class="custom-list-item">
+                  <div class="custom-list-main">
+                    <button type="button" class="custom-list-toggle ${listIds.has(list.id) ? 'active' : ''}" data-list-id="${escapeHtml(list.id)}">
+                      <span>${escapeHtml(list.name)}</span>
+                      <small>${listIds.has(list.id) ? '已加入' : '加入'}</small>
+                    </button>
+                  </div>
+                  <button type="button" class="list-delete-btn" data-delete-list="${escapeHtml(list.id)}">刪除</button>
+                </div>
+              `).join('') : `<div class="collection-helper">未有自訂清單，先新增一個啦。</div>`}
+            </div>
+          </div>
+        </section>
+      `;
+    }
+
+    function wireCollectionPanel(place) {
+      const statusButtons = Array.from(placeDetailBody.querySelectorAll('[data-status]'));
+      statusButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const status = button.dataset.status;
+          collectionStore.setStatus(place.id, status);
+          renderAll();
+          showToast(`已設為${collectionStore.getStatusLabel(status)}`);
+        });
+      });
+
+      const saveNotesBtn = placeDetailBody.querySelector('[data-action="save-notes"]');
+      if (saveNotesBtn) {
+        saveNotesBtn.addEventListener('click', () => {
+          collectionStore.setNotes(place.id, {
+            dishes: document.getElementById('collection-note-dishes')?.value || '',
+            withWho: document.getElementById('collection-note-withwho')?.value || '',
+            occasion: document.getElementById('collection-note-occasion')?.value || '',
+            plannedDate: document.getElementById('collection-note-date')?.value || '',
+          });
+          renderAll();
+          showToast('備註已儲存');
+        });
+      }
+
+      const createListBtn = placeDetailBody.querySelector('[data-action="create-list"]');
+      if (createListBtn) {
+        createListBtn.addEventListener('click', () => {
+          const input = document.getElementById('custom-list-name');
+          const name = input ? input.value.trim() : '';
+          if (!name) {
+            showToast('請先輸入清單名稱');
+            return;
+          }
+          const result = collectionStore.createList(name);
+          if (!result.created && result.list) {
+            showToast('清單已存在');
+          } else {
+            showToast('已新增清單');
+          }
+          if (input) input.value = '';
+          renderAll();
+        });
+      }
+
+      Array.from(placeDetailBody.querySelectorAll('[data-list-id]')).forEach((button) => {
+        button.addEventListener('click', () => {
+          const listId = button.dataset.listId;
+          const wasActive = button.classList.contains('active');
+          collectionStore.toggleListMembership(place.id, listId);
+          renderAll();
+          showToast(wasActive ? '已移出清單' : '已加入清單');
+        });
+      });
+
+      Array.from(placeDetailBody.querySelectorAll('[data-delete-list]')).forEach((button) => {
+        button.addEventListener('click', () => {
+          const listId = button.dataset.deleteList;
+          const first = window.confirm('確定刪除呢個清單？');
+          if (!first) return;
+          const second = window.confirm('再確認一次：刪除後呢個清單會由所有餐廳移除。');
+          if (!second) return;
+          collectionStore.deleteList(listId);
+          renderAll();
+          showToast('清單已刪除');
+        });
+      });
+    }
+
     function wireMedia(scope) {
       scope.querySelectorAll('.card-media img').forEach((img) => {
         const media = img.closest('.card-media');
@@ -1943,6 +2368,8 @@
       card.className = 'place-card';
       const price = formatPriceRange(place);
       const chips = renderTags(place.suitableOccasions);
+      const entry = getCurrentCollection(place.id);
+      const savedLabel = entry ? collectionStore.getStatusLabel(entry.status) : '';
       card.innerHTML = `
         <div class="card-media is-loading">
           <img src="${escapeHtml(place.coverImage || '/pantene-foodie-journey/assets/cover-food.png')}" alt="${escapeHtml(place.nameZh)} 封面相" loading="lazy" data-fallback="/pantene-foodie-journey/assets/cover-food.png" />
@@ -1957,12 +2384,13 @@
             ${place.district ? `<span>地區：${escapeHtml(place.district)}</span>` : ''}
             ${price ? `<span>人均：${escapeHtml(price)}</span>` : ''}
           </div>
+          ${savedLabel ? `<span class="collection-status">${escapeHtml(savedLabel)}</span>` : ''}
           <div class="chip-row">${chips}</div>
           <p>${escapeHtml(place.panteneNote || place.why || place.note || '')}</p>
         </div>
         <div class="card-actions">
           <button class="action-mini primary" type="button" data-action="detail">查看詳情</button>
-          <button class="action-mini" type="button" data-action="favorite">收藏</button>
+          <button class="action-mini ${entry ? 'is-saved' : ''}" type="button" data-action="favorite">${entry ? '更新收藏' : '收藏'}</button>
         </div>
         <span class="detail-link">查看詳情 →</span>
       `;
@@ -1981,13 +2409,15 @@
           </div>
         `;
         document.getElementById('back-to-places').addEventListener('click', () => {
-          placeDetailSection.classList.remove('active');
+          closePlaceDetail();
+          history.replaceState(null, '', `${location.origin}${location.pathname}`);
           document.getElementById('section-places').scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
         updateMetaForPlace(null);
         return;
       }
 
+      const entry = getCurrentCollection(place.id);
       const mapsUrl = buildMapsUrl(place);
       const bookingUrl = safeExternalUrl(place.bookingUrl);
       const officialUrl = safeExternalUrl(place.officialUrl);
@@ -2024,10 +2454,12 @@
           <div style="display:grid;gap:8px;justify-items:end;">
             <span class="badge">${panteneMarkHtml('Pantene 推介')}</span>
             <span class="badge">${place.verificationStatus === PanteneRestaurantModel.VERIFICATION_STATUS.VERIFIED ? '已核實' : '待確認'}</span>
+            ${entry ? `<span class="collection-status">${escapeHtml(collectionStore.getStatusLabel(entry.status))}</span>` : ''}
           </div>
         </div>
         <div class="detail-kicker">${renderTags(occasions)}</div>
         <div class="detail-grid">${sections.join('')}</div>
+        ${renderCollectionPanel(place, entry)}
         <div class="detail-section" style="margin-top:14px;">
           <strong>外部連結</strong>
           <div class="detail-links">
@@ -2047,13 +2479,14 @@
           ${mapsUrl ? `<a class="detail-link-btn" href="${mapsUrl}" target="_blank" rel="noopener noreferrer">開 Google Maps</a>` : ''}
         </div>
       `;
+      placeDetailSection.classList.add('active');
       updateMetaForPlace(place);
       history.replaceState(null, '', shareUrl);
       wireMedia(placeDetailBody);
+      wireCollectionPanel(place);
       document.getElementById('back-to-places').addEventListener('click', () => {
-        placeDetailSection.classList.remove('active');
+        closePlaceDetail();
         history.replaceState(null, '', `${location.origin}${location.pathname}`);
-        updateMetaForPlace(null);
         document.getElementById('section-places').scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
       document.getElementById('copy-share-url').addEventListener('click', async () => {
@@ -2155,25 +2588,29 @@
           const favoriteBtn = card.querySelector('[data-action="favorite"]');
           detailBtn.addEventListener('click', () => {
             activePlaceIndex = index;
-            placeDetailSection.classList.add('active');
-            renderPlaceDetail(place);
+            openPlaceDetail(place);
             placeDetailSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
           });
           favoriteBtn.addEventListener('click', (event) => {
             event.stopPropagation();
-            const current = new Set(JSON.parse(localStorage.getItem('pantene-foodie-journey-admin-favorites-v1') || '[]'));
-            if (current.has(place.id)) current.delete(place.id);
-            else current.add(place.id);
-            localStorage.setItem('pantene-foodie-journey-admin-favorites-v1', JSON.stringify(Array.from(current)));
-            favoriteBtn.textContent = current.has(place.id) ? '已收藏' : '收藏';
-            favoriteBtn.classList.toggle('primary', current.has(place.id));
+            const current = getCurrentCollection(place.id);
+            if (!current) {
+              collectionStore.setStatus(place.id, PanteneRestaurantCollectionStore.STATUS.WANT_TO_GO);
+              showToast('已加入想去');
+              renderAll();
+              return;
+            }
+            openPlaceDetail(place);
+            placeDetailSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
           });
         });
       }
       renderStream(commentStream, state.comments, commentCard);
       const selectedId = new URLSearchParams(location.search).get('restaurant');
-      if (selectedId) {
-        const matched = state.places.find((place) => place.id === selectedId);
+      const detailId = selectedId || currentDetailPlaceId;
+      if (detailId) {
+        if (selectedId) currentDetailPlaceId = detailId;
+        const matched = getPlaceById(detailId);
         placeDetailSection.classList.add('active');
         renderPlaceDetail(matched || null);
       }
@@ -2190,7 +2627,7 @@
       });
       foodCard.classList.toggle('focused', targetId === 'section-help');
       if (targetId !== 'section-places') {
-        placeDetailSection.classList.remove('active');
+        closePlaceDetail();
       }
       if (targetId === 'section-home') window.scrollTo({ top: 0, behavior: 'smooth' });
       if (targetId === 'section-help') foodCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
