@@ -1016,6 +1016,7 @@
       }
     }
   </style>
+  <script src="/pantene-foodie-journey/assets/restaurant-model.js"></script>
 </head>
 <body>
   <main class="phone">
@@ -1338,6 +1339,7 @@
         },
       ],
     };
+    seedState.places = PanteneRestaurantModel.normalizeCatalog(seedState.places);
 
     const rouletteCategories = [
       {
@@ -1483,7 +1485,12 @@
       try {
         const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
         if (!stored) return structuredClone(seedState);
-        return { ...seedState, ...stored };
+        const merged = { ...seedState, ...stored };
+        merged.places = PanteneRestaurantModel.normalizeCatalog(Array.isArray(merged.places) ? merged.places : seedState.places);
+        merged.recommendations = Array.isArray(merged.recommendations) ? merged.recommendations : [];
+        merged.favorites = Array.isArray(merged.favorites) ? merged.favorites : seedState.favorites;
+        merged.comments = Array.isArray(merged.comments) ? merged.comments : seedState.comments;
+        return merged;
       } catch (_) {
         return structuredClone(seedState);
       }
@@ -1505,21 +1512,27 @@
     }
 
     function normalizeRecommendations() {
-      const max = Math.min(6, state.places.length);
+      const visiblePool = state.places
+        .map((place, index) => ({ place, index }))
+        .filter(({ place }) => place.verificationStatus !== PanteneRestaurantModel.VERIFICATION_STATUS.ARCHIVED)
+        .map(({ index }) => index);
+      const max = Math.min(6, visiblePool.length);
       const valid = Array.isArray(state.recommendations)
-        ? state.recommendations.filter((index) => Number.isInteger(index) && index >= 0 && index < state.places.length)
+        ? state.recommendations.filter((index) => Number.isInteger(index) && index >= 0 && index < state.places.length && state.places[index].verificationStatus !== PanteneRestaurantModel.VERIFICATION_STATUS.ARCHIVED)
         : [];
       const unique = Array.from(new Set(valid)).slice(0, max);
       if (unique.length === max) {
         state.recommendations = unique;
         return;
       }
-      const pool = state.places.map((_, index) => index);
-      state.recommendations = shuffleArray(pool).slice(0, max);
+      state.recommendations = shuffleArray(visiblePool).slice(0, max);
     }
 
     function rerollRecommendations() {
-      const pool = state.places.map((_, index) => index);
+      const pool = state.places
+        .map((place, index) => ({ place, index }))
+        .filter(({ place }) => place.verificationStatus !== PanteneRestaurantModel.VERIFICATION_STATUS.ARCHIVED)
+        .map(({ index }) => index);
       state.recommendations = shuffleArray(pool).slice(0, Math.min(6, pool.length));
       saveState();
       renderAll();
@@ -1637,12 +1650,18 @@
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'place-card';
+      const statusBadge = place.verificationStatus === PanteneRestaurantModel.VERIFICATION_STATUS.PENDING
+        ? '<span class="badge">資料待確認</span>'
+        : place.verificationStatus === PanteneRestaurantModel.VERIFICATION_STATUS.ARCHIVED
+          ? '<span class="badge">已封存</span>'
+          : '';
       card.innerHTML = `
         <header>
           <strong>${place.name}</strong>
           <span>${place.area}</span>
         </header>
         <p>${place.note}</p>
+        ${statusBadge}
         <span class="detail-link">查看詳情 →</span>
       `;
       return card;
@@ -1651,13 +1670,24 @@
     function renderPlaceDetail(place) {
       const query = encodeURIComponent(place.mapQuery || `${place.name} ${place.area || ''}`.trim());
       const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${query}`;
+      const statusBadge = place.verificationStatus === PanteneRestaurantModel.VERIFICATION_STATUS.PENDING
+        ? '<span class="badge">資料待確認</span>'
+        : place.verificationStatus === PanteneRestaurantModel.VERIFICATION_STATUS.ARCHIVED
+          ? '<span class="badge">已封存</span>'
+          : '';
+      const validationNote = place.validation && !place.validation.valid
+        ? `<div class="point-row"><div><strong>資料狀態</strong><span>欠缺欄位：${place.validation.missing.join('、')}</span></div></div>`
+        : '';
       placeDetailBody.innerHTML = `
         <div class="place-detail-head">
           <div>
             <h3>${place.name}</h3>
             <p>${place.area}</p>
           </div>
-          <span class="badge">${panteneMarkHtml('Pantene 推介')}</span>
+          <div style="display:grid;gap:8px;justify-items:end;">
+            <span class="badge">${panteneMarkHtml('Pantene 推介')}</span>
+            ${statusBadge}
+          </div>
         </div>
         <div class="detail-points">
           <div class="point-row">
@@ -1678,6 +1708,7 @@
               <span>${place.note}</span>
             </div>
           </div>
+          ${validationNote}
         </div>
         <div class="detail-actions">
           <button class="detail-btn" type="button" id="back-to-places">返回清單</button>
@@ -1755,23 +1786,28 @@
       setRouletteResult(state.currentFood || 0, 'ready');
       normalizeRecommendations();
       if (profileFavoritesCount) profileFavoritesCount.textContent = String(state.favorites.length);
-      if (profileRecommendationCount) profileRecommendationCount.textContent = String(Math.min(6, state.places.length));
+      if (profileRecommendationCount) profileRecommendationCount.textContent = String(state.places.filter((place) => place.verificationStatus !== PanteneRestaurantModel.VERIFICATION_STATUS.ARCHIVED).length);
       renderMiniList(
         favoriteFoodsEl,
         state.favorites,
         '暫時未有收藏，按「收藏呢間」放入清單。',
         favoriteCard,
       );
-      renderStream(placeGrid, state.recommendations.map((index) => state.places[index]), placeCard);
-      const cards = Array.from(placeGrid.querySelectorAll('.place-card'));
-      cards.forEach((card, index) => {
-        card.addEventListener('click', () => {
-          activePlaceIndex = index;
-          placeDetailSection.classList.add('active');
-          renderPlaceDetail(state.places[state.recommendations[index]]);
-          placeDetailSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const recommendablePlaces = state.recommendations.map((index) => state.places[index]).filter(Boolean);
+      if (!recommendablePlaces.length) {
+        placeGrid.innerHTML = `<div class="empty-note">${PanteneRestaurantModel.getEmptyStateMessage('admin')}</div>`;
+      } else {
+        renderStream(placeGrid, recommendablePlaces, placeCard);
+        const cards = Array.from(placeGrid.querySelectorAll('.place-card'));
+        cards.forEach((card, index) => {
+          card.addEventListener('click', () => {
+            activePlaceIndex = index;
+            placeDetailSection.classList.add('active');
+            renderPlaceDetail(state.places[state.recommendations[index]]);
+            placeDetailSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
         });
-      });
+      }
       renderStream(commentStream, state.comments, commentCard);
     }
 

@@ -559,6 +559,7 @@
       line-height: 1.5;
     }
   </style>
+  <script src="/pantene-foodie-journey/assets/restaurant-model.js"></script>
 </head>
 <body>
   <main class="phone">
@@ -783,6 +784,8 @@
         mapQuery: '海風漁港 西環',
       },
     ];
+    const restaurantCatalog = PanteneRestaurantModel.normalizeCatalog(places);
+    const publicRestaurants = PanteneRestaurantModel.getRecommendableRestaurants(restaurantCatalog, 'public');
     const SHARE_STATE_KEY = 'pantene-foodie-journey-share-state-v2';
 
     function loadState() {
@@ -810,20 +813,20 @@
     }
 
     function normalizeRecommendations() {
-      const max = Math.min(6, places.length);
+      const max = Math.min(6, publicRestaurants.length);
       const valid = Array.isArray(state.recommendations)
-        ? state.recommendations.filter((index) => Number.isInteger(index) && index >= 0 && index < places.length)
+        ? state.recommendations.filter((index) => Number.isInteger(index) && index >= 0 && index < publicRestaurants.length)
         : [];
       const unique = Array.from(new Set(valid)).slice(0, max);
       if (unique.length === max) {
         state.recommendations = unique;
         return;
       }
-      state.recommendations = shuffleArray(places.map((_, index) => index)).slice(0, max);
+      state.recommendations = shuffleArray(publicRestaurants.map((_, index) => index)).slice(0, max);
     }
 
     function rerollRecommendations() {
-      state.recommendations = shuffleArray(places.map((_, index) => index)).slice(0, Math.min(6, places.length));
+      state.recommendations = shuffleArray(publicRestaurants.map((_, index) => index)).slice(0, Math.min(6, publicRestaurants.length));
       saveState();
       renderAll();
     }
@@ -920,20 +923,25 @@
       buildRouletteWheel();
       syncRouletteCore();
       normalizeRecommendations();
-      const recommendedPlaces = state.recommendations.map((index) => places[index]);
-      placeGrid.innerHTML = recommendedPlaces.map((place, index) => `
-        <button class="place-card" type="button" data-index="${index}">
-          <header><strong>${place.name}</strong><span>${place.area}</span></header>
-          <p>${place.note}</p>
-          <span class="detail-link">查看詳情 →</span>
-        </button>
-      `).join('');
-      Array.from(placeGrid.querySelectorAll('.place-card')).forEach((button) => {
-        button.addEventListener('click', () => {
-          renderPlaceDetail(recommendedPlaces[Number(button.dataset.index)]);
-          placeDetail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const recommendedPlaces = state.recommendations.map((index) => publicRestaurants[index]).filter(Boolean);
+      if (!recommendedPlaces.length) {
+        placeGrid.innerHTML = `<div class="empty-note">${PanteneRestaurantModel.getEmptyStateMessage('public')}</div>`;
+      } else {
+        placeGrid.innerHTML = recommendedPlaces.map((place, index) => `
+          <button class="place-card" type="button" data-index="${index}">
+            <header><strong>${place.name}</strong><span>${place.area}</span></header>
+            <p>${place.note}</p>
+            <span class="badge">已核實</span>
+            <span class="detail-link">查看詳情 →</span>
+          </button>
+        `).join('');
+        Array.from(placeGrid.querySelectorAll('.place-card')).forEach((button) => {
+          button.addEventListener('click', () => {
+            renderPlaceDetail(recommendedPlaces[Number(button.dataset.index)]);
+            placeDetail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
         });
-      });
+      }
     }
 
     function renderPlaceDetail(place) {

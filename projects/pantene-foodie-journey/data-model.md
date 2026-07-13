@@ -1,23 +1,42 @@
 # Data Model
 
-## User
+## Restaurant
+
+Unified schema for restaurant records in Pantene's Foodie Journey.
 
 - id
-- name
-- role: owner | partner | friend
-- avatar
-- created_at
-
-## Place
-
-- id
-- name
+- nameZh
+- nameEn
+- branchName
+- cuisine
+- district
 - address
-- map_url
-- category
-- price_level
-- tags
-- rating
+- latitude
+- longitude
+- googlePlaceId
+- priceMin
+- priceMax
+- openingHours
+- phone
+- bookingUrl
+- officialUrl
+- instagramUrl
+- description
+- panteneNote
+- suitableOccasions
+- signatureDishes
+- coverImage
+- verificationStatus: verified | pending | archived
+- sourceUrl
+- verifiedAt
+- createdAt
+- updatedAt
+
+## Compatibility
+
+- Legacy `Place` records are migrated through `restaurant-model.js`.
+- Existing fields such as `name`, `area`, `note`, `bestFor`, `why`, and `mapQuery` are kept as compatibility aliases.
+- Missing sensitive fields are stored as `null` or empty arrays/strings and never invented.
 
 ## Comment
 
