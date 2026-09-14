@@ -3591,7 +3591,7 @@ def _render_login_page(error: str = ""):
         <div class="wrap">
             <div class="hero">
                 <div>
-                    <div class="eyebrow">Di2da Admin · 我是最新版本v20260914</div>
+                    <div class="eyebrow">Di2da Admin · 我是最新版本v20260915</div>
                     <h1>軍團行政系統</h1>
                     <p class="lead">登入後可進入導師列表、班別列表、薪酬管理同軍團公告。發票系統只限 admin 使用。介面已預留多帳戶架構，之後可以逐步加入更多登入帳戶。</p>
                     <div class="chips">
