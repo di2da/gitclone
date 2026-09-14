@@ -6321,20 +6321,24 @@ def _render_accounts_page(request: Request, notice: str = ""):
 
 
 def _get_recent_announcements(limit: int = 5):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT id, title, body, pinned, created_by, image_filename, image_mime, image_blob, created_at, teacher_quote
-        FROM announcements
-        ORDER BY pinned DESC, created_at DESC, id DESC
-        LIMIT ?
-        """,
-        (limit,),
-    )
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, title, body, pinned, created_by, image_filename, image_mime, image_blob, created_at, teacher_quote
+            FROM announcements
+            ORDER BY pinned DESC, created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+    except Exception:
+        # Public pages must stay up even if the remote DB proxy is temporarily unavailable.
+        return []
 
 
 def _render_announcements_page(request: Request, notice: str = ""):
