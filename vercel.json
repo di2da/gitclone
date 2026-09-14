@@ -13,7 +13,6 @@
     }
   ],
   "env": {
-    "DOCMAGIC_DB_BASE_URL": "https://bf56f3d8d0836b.lhr.life",
-    "DOCMAGIC_DB_PROXY": "1"
+    "DOCMAGIC_ENV": "production"
   }
 }
