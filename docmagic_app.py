@@ -3680,7 +3680,7 @@ def _render_login_page(error: str = ""):
 
 def _render_dashboard_page(request: Request):
     now = datetime.now()
-    today_display = now.strftime("%Y年%m月%d日")
+    today = now.strftime("%Y年%m月%d日")
     display_name = _current_display_name(request)
     user = _current_user_record(request)
     csrf_html = _csrf_input_html(request)
