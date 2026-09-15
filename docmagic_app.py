@@ -3781,7 +3781,8 @@ def _render_dashboard_page(request: Request):
         if not text:
             return False
         compact = text.replace("星期", "").replace("週", "").replace("周", "")
-        aliases = weekday_aliases.get(today.weekday(), set())
+        # Fix: Use datetime.now() instead of the 'today' string
+        aliases = weekday_aliases.get(datetime.now().weekday(), set())
         return text in aliases or compact in aliases
 
     today_lesson_rows = [row for row in lesson_rows if _lesson_is_today(row[3])]
