@@ -23,6 +23,7 @@ DK_Administrative/
 !assets/fonts/
 !assets/fonts/**
 !docmagic_app.py
+!docmagic.db
 !requirements.txt
 !vercel.json
 !logo.png
