@@ -2400,8 +2400,11 @@ def _render_doc_html(doc_type, client_name, project_name, items_list, date_str, 
 
     sig_html = ""
     if with_sign:
-        sig_src = f"file://{(BASE_DIR / 'signature.png').as_posix()}"
-        stamp_src = f"file://{(BASE_DIR / 'stamp.png').as_posix()}"
+        # Add timestamp to bust cache
+        import time
+        ts = int(time.time())
+        sig_src = f"file://{(BASE_DIR / 'signature.png').as_posix()}?t={ts}"
+        stamp_src = f"file://{(BASE_DIR / 'stamp.png').as_posix()}?t={ts}"
         sig_html = f"""
         <div class="sig-stamp-area">
           <img class="sig" src="{sig_src}" alt="signature">
