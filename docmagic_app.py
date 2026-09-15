@@ -11528,7 +11528,10 @@ def _salary_month_records(year: int, month: int):
         FROM teachers t
         LEFT JOIN salary_records sr ON sr.teacher_id = t.id AND sr.year=? AND sr.month=?
         WHERE t.is_active=1
-        ORDER BY t.name
+        ORDER BY
+            CASE WHEN TRIM(COALESCE(t.bank_name, '')) = '' THEN 1 ELSE 0 END,
+            t.bank_name COLLATE NOCASE,
+            t.name COLLATE NOCASE
         """,
         (int(year), int(month)),
     )
@@ -13001,7 +13004,11 @@ async def salary_teachers(
         LEFT JOIN school_classes sc ON sc.teacher_id = t.id AND sc.is_active=1
         {where_sql}
         GROUP BY t.id
-        ORDER BY t.is_active DESC, t.name
+        ORDER BY
+            t.is_active DESC,
+            CASE WHEN TRIM(COALESCE(t.bank_name, '')) = '' THEN 1 ELSE 0 END,
+            t.bank_name COLLATE NOCASE,
+            t.name COLLATE NOCASE
     """, params)
     rows = c.fetchall()
     conn.close()
@@ -14470,7 +14477,10 @@ async def salary_report(user: tuple = Depends(require_roles("admin", "finance"))
         LEFT JOIN school_classes sc ON sc.teacher_id = t.id AND sc.is_active=1
         WHERE t.is_active=1
         GROUP BY t.id
-        ORDER BY amount DESC, t.name
+        ORDER BY
+            CASE WHEN TRIM(COALESCE(t.bank_name, '')) = '' THEN 1 ELSE 0 END,
+            t.bank_name COLLATE NOCASE,
+            t.name COLLATE NOCASE
     """)
     teachers = c.fetchall()
 
