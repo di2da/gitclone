@@ -10973,7 +10973,7 @@ def _fetch_school_detail(school_id: int):
 
 
 def _school_form_html(request: Request, school=None):
-    row = school or ("", "", "", "", "", "", "潛在合作", 0, "", "", "", "", "", "", 1, "", "", "", "", "", "", "")
+    row = school or ("", "", "", "", "", "", "潛在合作", 0, "", "", "", "", "", "", "", 1, "", "", "", "", "", "")
     (
         sid,
         school_year,
@@ -14503,16 +14503,37 @@ async def db_query(request: Request, service_user: dict = Depends(require_servic
     if ";" in sql_body:
         _audit_action_request(request, "raw_sql_bridge", target_type="bridge", target_id="", result="denied", actor=actor, metadata={"reason": "multi_statement"})
         raise HTTPException(status_code=403, detail="Forbidden")
-    if not re.match(r"^(SELECT|WITH)\b", upper):
+    statement_match = re.match(r"^(SELECT|WITH|INSERT|UPDATE|DELETE)\b", upper)
+    if not statement_match:
         _audit_action_request(request, "raw_sql_bridge", target_type="bridge", target_id="", result="denied", actor=actor, metadata={"reason": "write_not_allowed"})
         raise HTTPException(status_code=403, detail="Forbidden")
-    forbidden_tokens = ("ATTACH", "DETACH", "PRAGMA", "VACUUM", "DROP", "ALTER", "CREATE", "INSERT", "UPDATE", "DELETE", "REPLACE", "REINDEX", "TRIGGER")
+    statement_type = statement_match.group(1)
+    forbidden_tokens = ("ATTACH", "DETACH", "PRAGMA", "VACUUM", "DROP", "ALTER", "CREATE", "REPLACE", "REINDEX", "TRIGGER")
     if any(token in upper for token in forbidden_tokens):
         _audit_action_request(request, "raw_sql_bridge", target_type="bridge", target_id="", result="denied", actor=actor, metadata={"reason": "forbidden_token"})
         raise HTTPException(status_code=403, detail="Forbidden")
-    allowed_tables = {"app_users", "app_sessions", "announcements", "common_clients", "form_presets", "records", "teachers", "school_classes", "salary_records"}
-    table_refs = set(re.findall(r"\b(?:FROM|JOIN)\s+([A-Z_][A-Z0-9_]*)", upper))
-    if any(table.lower() not in allowed_tables for table in table_refs):
+    readable_tables = {
+        "app_users", "app_sessions", "announcements", "common_clients", "form_presets", "records",
+        "teachers", "school_classes", "salary_records", "schools", "school_contacts", "school_followups",
+        "school_documents", "school_finance", "class_tutors", "school_schedules", "attendance_records",
+        "attendance_lesson_groups", "attendance_lesson_students",
+    }
+    writable_tables = readable_tables - {"app_users", "app_sessions"}
+    if statement_type in {"SELECT", "WITH"}:
+        table_refs = set(re.findall(r"\b(?:FROM|JOIN)\s+([A-Z_][A-Z0-9_]*)", upper))
+        allowed_tables = readable_tables
+    elif statement_type == "INSERT":
+        table_refs = set(re.findall(r"^INSERT\s+INTO\s+([A-Z_][A-Z0-9_]*)", upper))
+        table_refs.update(re.findall(r"\b(?:FROM|JOIN)\s+([A-Z_][A-Z0-9_]*)", upper))
+        allowed_tables = writable_tables
+    elif statement_type == "UPDATE":
+        table_refs = set(re.findall(r"^UPDATE\s+([A-Z_][A-Z0-9_]*)", upper))
+        table_refs.update(re.findall(r"\b(?:FROM|JOIN)\s+([A-Z_][A-Z0-9_]*)", upper))
+        allowed_tables = writable_tables
+    else:
+        table_refs = set(re.findall(r"^DELETE\s+FROM\s+([A-Z_][A-Z0-9_]*)", upper))
+        allowed_tables = writable_tables
+    if not table_refs or any(table.lower() not in allowed_tables for table in table_refs):
         _audit_action_request(request, "raw_sql_bridge", target_type="bridge", target_id="", result="denied", actor=actor, metadata={"reason": "table_not_allowed", "tables": sorted(table_refs)})
         raise HTTPException(status_code=403, detail="Forbidden")
     if not isinstance(params, list):
@@ -14523,6 +14544,8 @@ async def db_query(request: Request, service_user: dict = Depends(require_servic
     cursor = conn.cursor()
     try:
         cursor.execute(sql_body, params)
+        if statement_type in {"INSERT", "UPDATE", "DELETE"}:
+            conn.commit()
         rows = []
         columns = []
         if fetch and cursor.description:
