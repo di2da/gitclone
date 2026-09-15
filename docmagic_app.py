@@ -1872,7 +1872,10 @@ def _bootstrap_sqlite_connect(path=DB_PATH, timeout=3, retries=3, delay=0.1):
             conn = _REAL_SQLITE_CONNECT(path, timeout=timeout)
             try:
                 conn.execute("PRAGMA busy_timeout=30000")
-                conn.execute("PRAGMA journal_mode=WAL")
+                if os.environ.get("VERCEL"):
+                    conn.execute("PRAGMA journal_mode=DELETE")
+                else:
+                    conn.execute("PRAGMA journal_mode=WAL")
             except Exception:
                 pass
             return conn
