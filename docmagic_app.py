@@ -1840,8 +1840,16 @@ def _resolve_db_path():
     if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") or os.environ.get("VERCEL_URL"):
         target_tmp = Path("/tmp/docmagic.db")
         source_bundled = Path(__file__).resolve().parent / "docmagic.db"
-        if source_bundled.exists() and not target_tmp.exists():
-            _clone_db_if_needed(source_bundled, target_tmp)
+        # Force fresh copy and write permissions on Vercel
+        if not target_tmp.exists() or not os.access(target_tmp, os.W_OK):
+            try:
+                target_tmp.parent.mkdir(parents=True, exist_ok=True)
+                if source_bundled.exists():
+                    import shutil
+                    shutil.copy(source_bundled, target_tmp)
+                    os.chmod(target_tmp, 0o666)
+            except Exception:
+                pass
         return str(target_tmp)
     return "docmagic.db"
 
