@@ -3679,7 +3679,8 @@ def _render_login_page(error: str = ""):
 
 
 def _render_dashboard_page(request: Request):
-    today = datetime.now().strftime("%Y年%m月%d日")
+    now = datetime.now()
+    today_display = now.strftime("%Y年%m月%d日")
     display_name = _current_display_name(request)
     user = _current_user_record(request)
     csrf_html = _csrf_input_html(request)
@@ -3805,7 +3806,7 @@ def _render_dashboard_page(request: Request):
     else:
         today_class_body = "今日暫時未有已登記課堂。"
 
-    announcement_rows = [("今日課堂資訊", today_class_body, 1, today.strftime("%Y-%m-%d %H:%M"))] + list(announcement_rows)
+    announcement_rows = [("今日課堂資訊", today_class_body, 1, now.strftime("%Y-%m-%d %H:%M"))] + list(announcement_rows)
 
     logo_html = f'<img src="/logo.png" alt="Di2da Dance School">' if (BASE_DIR / "logo.png").exists() else ""
     return f"""
