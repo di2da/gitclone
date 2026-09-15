@@ -736,8 +736,8 @@ def _seed_common_clients():
     # Keep the requested NGO entry available even if the database is rebuilt.
     seed_rows = [
         (
-            "香港基督教女⻘年會將軍澳綜合社會服務處",
-            "香港基督教女⻘年會將軍澳綜合社會服務處",
+            "香港基督教女青年會將軍澳綜合社會服務處",
+            "香港基督教女青年會將軍澳綜合社會服務處",
             "",
             "報價單",
             "NGO",
@@ -768,6 +768,74 @@ def _normalize_common_client_name(value: str) -> str:
     text = text.replace("⻘", "青")
     text = re.sub(r"\s+", "", text)
     return text.strip().lower()
+
+
+def _school_common_client_category(school_name: str, cooperation_type: str = "") -> str:
+    category = (cooperation_type or "").strip()
+    allowed = {"小學", "中學", "特殊學校/群育學校", "幼稚園", "NGO"}
+    if category in allowed:
+        return category
+    name = (school_name or "").strip()
+    if "幼稚園" in name or "幼兒園" in name:
+        return "幼稚園"
+    if "中學" in name:
+        return "中學"
+    if "社會服務處" in name or "青年空間" in name:
+        return "NGO"
+    if "小學" in name:
+        return "小學"
+    return ""
+
+
+def _upsert_school_common_client(conn, school_name: str, cooperation_type: str = ""):
+    school_name = (school_name or "").strip()
+    if not school_name:
+        return
+    category = _school_common_client_category(school_name, cooperation_type)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, client_name, category, notes FROM common_clients")
+    canonical = _normalize_common_client_name(school_name)
+    matched = None
+    for row in cursor.fetchall():
+        if _normalize_common_client_name(row[1] or row[2]) == canonical:
+            matched = row
+            break
+    if matched:
+        notes = matched[4] or category
+        cursor.execute(
+            """
+            UPDATE common_clients
+            SET name=?, client_name=?, category=?, notes=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (school_name, school_name, category or matched[3] or "", notes, matched[0]),
+        )
+    else:
+        cursor.execute(
+            """
+            INSERT INTO common_clients (name, client_name, project_name, doc_type, category, notes)
+            VALUES (?, ?, '', '報價單', ?, ?)
+            """,
+            (school_name, school_name, category, category),
+        )
+
+
+@_retry_sqlite_locked
+def _sync_schools_to_common_clients():
+    conn = _bootstrap_sqlite_connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT name, cooperation_type
+        FROM schools
+        WHERE is_active=1 AND TRIM(COALESCE(name, '')) <> ''
+        ORDER BY id
+        """
+    )
+    for school_name, cooperation_type in cursor.fetchall():
+        _upsert_school_common_client(conn, school_name, cooperation_type)
+    conn.commit()
+    conn.close()
 
 
 def _unique_common_client_rows(rows):
@@ -10371,6 +10439,7 @@ def init_salary_db():
     conn.close()
 
 init_salary_db()
+_sync_schools_to_common_clients()
 
 ATTENDANCE_AREA_OPTIONS = [
     "藍田",
@@ -13515,6 +13584,7 @@ async def salary_school_new_save(
         row = cursor.fetchone()
         school_id = int(row[0]) if row else 0
         _sync_school_class_counts(conn, school_id)
+        _upsert_school_common_client(conn, name.strip(), cooperation_type.strip())
         conn.commit()
         conn.close()
     except sqlite3.OperationalError as exc:
