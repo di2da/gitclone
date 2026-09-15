@@ -2,4 +2,5 @@ fastapi
 uvicorn
 pillow
 reportlab
+pypdf
 python-multipart

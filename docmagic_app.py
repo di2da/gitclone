@@ -70,7 +70,7 @@ FONT_DIR = BASE_DIR / "assets" / "fonts"
 CACHE_FONT_DIR = Path(os.environ.get("DOCMAGIC_FONT_CACHE", "/tmp/docmagic-fonts"))
 APP_NAME = "DK Admin V10"
 APP_TAGLINE = "軍團報價、發票、收據與薪酬管理系統"
-SCRC_BASE_PDF_PATH = BASE_DIR / "media" / "inbound" / "openclaw-staged-c5f099f1-8568-408a-8800-066e50b3aeb8" / "Template_of_Documentary_Proof_tc---94c1cfdd-3bc4-40ea-a6ce-73601667bff5.pdf"
+SCRC_BASE_PDF_PATH = BASE_DIR / "api" / "SCRC_Template.pdf"
 SCRC_COORDINATE_MAP_PATH = BASE_DIR / "scrc_overlay_coordinates.json"
 SCRC_ORG_NAME = "狄易達軍團跳舞學校"
 SCRC_ORG_ADDRESS_LINES = [
@@ -2266,11 +2266,11 @@ def _doc_meta(doc_type):
     }
     title_en, title_sub = suffix_map.get(doc_type, ("Document", "DOCUMENT"))
     if doc_type == "報價單":
-        no_label = "報價單編號 Quotation No."
+        no_label = "報價單號碼"
     elif doc_type == "收據":
-        no_label = "收據編號 Receipt No."
+        no_label = "收據號碼"
     else:
-        no_label = "發票編號 Invoice No."
+        no_label = "發票號碼"
     return {
         "title_main": doc_type or "文件",
         "title_sub": title_sub,
@@ -2297,9 +2297,10 @@ def _doc_remarks(doc_type, custom_remarks=None):
         ]
     if doc_type == "收據":
         return [
-            "1. 上述款項已全數收妥。",
-            "2. 如有任何查詢，請致電 (852) 3525 0134。",
-            "3. 銀行戶口：中國銀行 012-882-0-0082760 (Di2da Dance School)",
+            "1. 將全數款項支票交給項目負責人或直接存入” 狄易達軍團跳舞學校 ” 戶口。",
+            "2. 支票抬頭： “ Di2da Dance School ”",
+            "3. 中國銀行：012 882 000 82760",
+            "4. 本校只接受支票付款。/ 查詢電話：67004444",
         ]
     return ["1. 查詢電話：67004444", "2. 感謝 貴校對本校之支持與信任。"]
 
@@ -2358,7 +2359,7 @@ def _render_doc_html(doc_type, client_name, project_name, items_list, date_str, 
         header_left.append(f'<div class="line"><b>項目 Project：</b>{esc(project_name)}</div>')
     header_right = [
         f'<div class="line"><b>{esc(meta["no_label"])}：</b>{esc(_format_doc_no_display(doc_no))}</div>',
-        f'<div class="line"><b>日期 Date：</b>{esc(date_str)}</div>',
+        f'<div class="line"><b>日期：</b>{esc(date_str)}</div>',
     ]
 
     item_rows = []
@@ -2369,14 +2370,14 @@ def _render_doc_html(doc_type, client_name, project_name, items_list, date_str, 
         qty_val = _parse_money_number(qty)
         amount = price_val * qty_val
         total_val += amount
-        desc_html = esc(desc)
+        desc_html = esc(desc).replace("\n", "<br>")
         calc_text = f"${price_val:,.0f} x {_format_calc_qty(qty)}"
         amount_text = _format_money(amount)
         item_rows.append(
             f"""
             <tr>
               <td>
-                <b>ITEM {idx}：{desc_html}</b>
+                <b>{desc_html}</b>
               </td>
               <td>{esc(calc_text)}</td>
               <td>{esc(amount_text)}</td>
@@ -2388,17 +2389,14 @@ def _render_doc_html(doc_type, client_name, project_name, items_list, date_str, 
         item_rows.append(
             """
             <tr>
-              <td><b>ITEM 1：-</b></td>
+              <td><b>-</b></td>
               <td>$0 x 0</td>
               <td>$0.00</td>
             </tr>
             """
         )
 
-    if doc_type == "收據":
-        title_extra = '<br><span class="paid-badge">PAID 已收款</span>'
-    else:
-        title_extra = ""
+    title_extra = ""
 
     sig_html = ""
     if with_sign:
@@ -2507,13 +2505,13 @@ def _render_doc_html(doc_type, client_name, project_name, items_list, date_str, 
   <hr class="title-underline">
   <table class="items">
     <tr>
-      <th>摘要 DESCRIPTION</th>
-      <th>金額 HKD</th>
-      <th>費用 AMOUNT</th>
+      <th>摘要 Description</th>
+      <th>數量/計算</th>
+      <th>費用 (HKD)</th>
     </tr>
     {''.join(item_rows)}
     <tr class="total-row">
-      <td colspan="2" class="total-label-cell">總計 Total</td>
+      <td colspan="2" class="total-label-cell">總計 Total:</td>
       <td class="total-amount-cell">${total_val:,.2f}</td>
     </tr>
   </table>
@@ -2525,7 +2523,6 @@ def _render_doc_html(doc_type, client_name, project_name, items_list, date_str, 
     <div class="bottom-sign">
       {sig_html}
       <div class="sig-line">授權人簽署 Authorized Signature</div>
-      <div class="sig-entity">狄易達軍團跳舞學校 Di2da Dance School</div>
     </div>
   </div>
 </div>
@@ -4086,9 +4083,11 @@ def _render_announcements_page(request: Request):
                 </div>
                 <span class="announce-pill">{len(today_lesson_rows)} 堂</span>
             </div>
-            <div class="announce-today">{html.escape(today_class_body).replace('\\n', '<br>')}</div>
+            <div class="announce-today">PLACEHOLDER_TODAY_CLASS_BODY</div>
         </section>
     """
+    today_card_html = today_card_html.replace('PLACEHOLDER_TODAY_CLASS_BODY', html.escape(today_class_body).replace('\n', '<br>'))
+
 
     announcement_cards = []
     for row in announcement_rows:
@@ -4112,10 +4111,10 @@ def _render_announcements_page(request: Request):
                     <span>{html.escape(created_at or '')}</span>
                 </div>
                 <h3>{html.escape(title or '')}</h3>
-                <p>{html.escape(body or '').replace('\\n', '<br>')}</p>
+                <p>PLACEHOLDER_ANNOUNCE_BODY</p>
                 {teacher_quote_html}
             </article>
-        """)
+        """.replace('PLACEHOLDER_ANNOUNCE_BODY', html.escape(body or '').replace('\n', '<br>')))
     announcements_html = "".join(announcement_cards) or '<div class="announce-empty">暫時未有公告。</div>'
 
     return f"""
@@ -6533,7 +6532,7 @@ async def announcements_create(
     body: str = Form(...),
     teacher_quote: str = Form(""),
     pinned: str = Form("0"),
-    image: UploadFile | None = File(None),
+    image: Optional[UploadFile] = File(None),
     user: tuple = Depends(require_roles("admin")),
 ):
     title = title.strip()
