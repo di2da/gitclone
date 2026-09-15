@@ -56,6 +56,13 @@ except Exception:
     PYPDF_AVAILABLE = False
 
 app = FastAPI()
+@app.exception_handler(Exception)
+async def debug_exception_handler(request: Request, exc: Exception):
+    import traceback
+    return HTMLResponse(
+        content=f"<html><body style='font-family:sans-serif;padding:20px;'><h1>Internal Server Error (Debug)</h1><p><b>Error:</b> {html.escape(str(exc))}</p><pre style='background:#eee;padding:10px;border-radius:5px;'>{html.escape(traceback.format_exc())}</pre></body></html>",
+        status_code=500
+    )
 security = HTTPBasic(auto_error=False)
 BASE_DIR = Path(__file__).resolve().parent
 PANTENE_FOODIE_DIR = BASE_DIR / "projects" / "pantene-foodie-journey"
@@ -75,6 +82,14 @@ SCRC_SIGNATORY_DEFAULT = "廖成達校長"
 SCRC_SIGNATURE_PNG = BASE_DIR / "signature.png"
 SCRC_STAMP_PNG = BASE_DIR / "stamp.png"
 
+
+@app.exception_handler(Exception)
+async def debug_exception_handler(request: Request, exc: Exception):
+    import traceback
+    return HTMLResponse(
+        content=f"<html><body><h1>Internal Server Error (Debug)</h1><pre>{html.escape(traceback.format_exc())}</pre></body></html>",
+        status_code=500
+    )
 
 @app.middleware("http")
 async def _db_server_mode_middleware(request: Request, call_next):
@@ -1839,15 +1854,30 @@ def _resolve_db_path():
         return "/tmp/docmagic.db"
     if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") or os.environ.get("VERCEL_URL"):
         target_tmp = Path("/tmp/docmagic.db")
-        source_bundled = Path(__file__).resolve().parent / "docmagic.db"
-        # Force fresh copy and write permissions on Vercel
+        # Try multiple potential source locations on Vercel
+        possible_sources = [
+            Path(__file__).resolve().parent / "docmagic.db",
+            Path("/var/task/docmagic.db"),
+            Path("/var/task/api/../docmagic.db"),
+            Path("docmagic.db").resolve()
+        ]
+        
+        source_bundled = None
+        for ps in possible_sources:
+            if ps.exists():
+                source_bundled = ps
+                break
+
         if not target_tmp.exists() or not os.access(target_tmp, os.W_OK):
             try:
                 target_tmp.parent.mkdir(parents=True, exist_ok=True)
-                if source_bundled.exists():
+                if source_bundled and source_bundled.exists():
                     import shutil
-                    shutil.copy(source_bundled, target_tmp)
-                    os.chmod(target_tmp, 0o666)
+                    # Ensure the target is writable and fresh
+                    if target_tmp.exists():
+                        target_tmp.unlink(missing_ok=True)
+                    shutil.copy(str(source_bundled), str(target_tmp))
+                    os.chmod(str(target_tmp), 0o666)
             except Exception:
                 pass
         return str(target_tmp)
