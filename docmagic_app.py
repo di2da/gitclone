@@ -1838,7 +1838,11 @@ def _resolve_db_path():
         _clone_db_if_needed(workspace_db, Path("/tmp/docmagic.db"))
         return "/tmp/docmagic.db"
     if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") or os.environ.get("VERCEL_URL"):
-        return "/tmp/docmagic.db"
+        target_tmp = Path("/tmp/docmagic.db")
+        source_bundled = Path(__file__).resolve().parent / "docmagic.db"
+        if source_bundled.exists() and not target_tmp.exists():
+            _clone_db_if_needed(source_bundled, target_tmp)
+        return str(target_tmp)
     return "docmagic.db"
 
 
