@@ -8661,6 +8661,7 @@ def _scrc_font_name():
     if not REPORTLAB_AVAILABLE:
         return None
     candidates = [
+        (FONT_DIR / "NotoSansTC-wght.ttf", None),
         (Path("/System/Library/Fonts/Supplemental/Songti.ttc"), 7),  # Songti TC Regular
         (Path("/System/Library/Fonts/Supplemental/Songti.ttc"), 5),  # Songti TC Light fallback if needed
     ]
@@ -8669,7 +8670,8 @@ def _scrc_font_name():
             continue
         try:
             font_name = f"SCRCChinese_{idx}"
-            pdfmetrics.registerFont(TTFont(font_name, str(path), subfontIndex=subfont_index))
+            kwargs = {"subfontIndex": subfont_index} if subfont_index is not None else {}
+            pdfmetrics.registerFont(TTFont(font_name, str(path), **kwargs))
             return font_name
         except Exception:
             continue
