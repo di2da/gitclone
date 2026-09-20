@@ -24,10 +24,12 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import traceback
 import ssl
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from typing import List, Optional
 from contextvars import ContextVar
 from pathlib import Path
+
+from school_calendar_parser import parse_school_calendar_csv
 
 try:
     import uvicorn
@@ -3443,6 +3445,27 @@ def require_roles(*roles, allow_basic_auth: bool = False):
 def _render_login_page(error: str = ""):
     error_html = f'<div class="error">{html.escape(error)}</div>' if error else ""
     logo_html = f'<img src="/logo.png" alt="Di2da Dance School">' if (BASE_DIR / "logo.png").exists() else ""
+    summary = _get_session_summary()
+    summary_html = ""
+    if summary["week"] > 0 or summary["today"] > 0:
+        summary_html = f"""
+        <div class="announce-wrap" style="margin-top:18px;">
+            <div class="announce-title">
+                <h3>本週課堂概覽</h3>
+                <span>登入後查看完整安排</span>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                <div style="flex:1;min-width:120px;background:rgba(15,23,42,.52);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:14px;text-align:center;">
+                    <div style="font-size:28px;font-weight:800;color:#d6b46d;">{summary['week']}</div>
+                    <div style="font-size:12px;color:#cbd5e1;margin-top:4px;">本週課堂總數</div>
+                </div>
+                <div style="flex:1;min-width:120px;background:rgba(15,23,42,.52);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:14px;text-align:center;">
+                    <div style="font-size:28px;font-weight:800;color:{('#d6b46d' if summary['today'] > 0 else '#94a3b8')};">{summary['today']}</div>
+                    <div style="font-size:12px;color:#cbd5e1;margin-top:4px;">今日課堂</div>
+                </div>
+            </div>
+        </div>
+        """
     return f"""
     <html lang="zh-HK">
     <head>
@@ -3713,6 +3736,7 @@ def _render_login_page(error: str = ""):
                         <span class="chip">薪酬管理</span>
                         <span class="chip">軍團公告</span>
                     </div>
+                    {summary_html}
                     <div class="announce-wrap">
                         <div class="announce-title">
                             <h3>最新軍團公告</h3>
@@ -3873,6 +3897,58 @@ def _render_dashboard_page(request: Request):
         )
     else:
         today_class_body = "今日暫時未有已登記課堂。"
+
+    now_date = datetime.now().date()
+    monday = now_date - timedelta(days=now_date.weekday())
+    sunday = monday + timedelta(days=6)
+    weekly_rows = _get_weekly_sessions(monday, sunday)
+    weekly_by_date = {i: [] for i in range(7)}
+    for row in weekly_rows:
+        d = datetime.strptime(row["session_date"], "%Y-%m-%d").date()
+        weekly_by_date[d.weekday()].append(row)
+    weekday_labels = ["一", "二", "三", "四", "五", "六", "日"]
+    weekly_cells = []
+    for i in range(7):
+        d = monday + timedelta(days=i)
+        is_today = (d == now_date)
+        sessions = weekly_by_date[i]
+        cell_body = ""
+        if sessions:
+            cell_body = "<br>".join(
+                html.escape(" · ".join(b for b in [
+                    (r["start_time"] or "").strip(),
+                    (r["school_name"] or "").strip(),
+                    (r["program_name"] or "").strip(),
+                    (r["teacher_name"] or "").strip(),
+                ] if b))
+                for r in sessions
+            )
+        else:
+            cell_body = "<span style='color:#9ca3af;font-size:12px;'>沒有課堂</span>"
+        weekly_cells.append(
+            f"""<div style="flex:1;min-width:90px;border-radius:12px;padding:10px;background:{'#f4ead2' if is_today else '#fff'};border:1px solid {'#b89d5d' if is_today else '#e5e7eb'};">
+                <div style="font-size:11px;color:#6b7280;margin-bottom:4px;">{d.month}/{d.day} 星期{weekday_labels[i]}{' (今日)' if is_today else ''}</div>
+                <div style="font-size:13px;line-height:1.6;">{cell_body}</div>
+                <div style="font-size:11px;color:#6b7280;margin-top:4px;text-align:right;">{len(sessions)} 堂</div>
+            </div>"""
+        )
+    weekly_card_html = f"""
+        <section class="announce-panel" style="margin-bottom:16px;">
+            <div class="announce-panel-head">
+                <div>
+                    <div class="announce-kicker">本週學校課堂</div>
+                    <h2>{monday.month}/{monday.day} – {sunday.month}/{sunday.day} 校曆</h2>
+                </div>
+                <span class="announce-pill">{len(weekly_rows)} 堂</span>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+                {''.join(weekly_cells)}
+            </div>
+            <div style="margin-top:12px;text-align:right;">
+                <a href="/calendar" class="btn btn-small">查看完整校曆 →</a>
+            </div>
+        </section>
+    """
 
     announcement_rows = [("今日課堂資訊", today_class_body, 1, now.strftime("%Y-%m-%d %H:%M"))] + list(announcement_rows)
 
@@ -4307,6 +4383,7 @@ def _render_announcements_page(request: Request):
                 </div>
             </div>
             <div class="panel">
+                {weekly_card_html}
                 {today_card_html}
                 <div class="announce-list">{announcements_html}</div>
             </div>
@@ -4456,6 +4533,104 @@ async def dashboard(request: Request):
     if not _current_user_record(request):
         return RedirectResponse("/", status_code=303)
     return HTMLResponse(_render_dashboard_page(request))
+
+
+def _render_calendar_page(request: Request, week_offset: int = 0, view: str = "week"):
+    now = datetime.now()
+    base_date = now.date() + timedelta(weeks=week_offset)
+    monday = base_date - timedelta(days=base_date.weekday())
+    sunday = monday + timedelta(days=6)
+    prev_offset = week_offset - 1
+    next_offset = week_offset + 1
+    rows = _get_weekly_sessions(monday, sunday)
+    user = _current_user_record(request)
+    role_label = ""
+    if user:
+        role_label = _normalize_role(user[3]).capitalize()
+    weekday_labels = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+    day_cards = []
+    for i in range(7):
+        d = monday + timedelta(days=i)
+        is_today = (d == now.date())
+        day_sessions = [r for r in rows if r["session_date"] == d.isoformat()]
+        session_rows = []
+        for s in day_sessions:
+            badge_color = {
+                "已完成": "#166534",
+                "改期": "#92400e",
+                "取消": "#991b1b",
+                "待確認": "#4b5563",
+            }.get(s["status"], "#166534")
+            badge_bg = {
+                "已完成": "#dcfce7",
+                "改期": "#fef3c7",
+                "取消": "#fee2e2",
+                "待確認": "#f3f4f6",
+            }.get(s["status"], "#dcfce7")
+            session_rows.append(f"""
+                <tr>
+                    <td style="padding:8px 6px;font-size:13px;">{html.escape((s['start_time'] or '').strip())}</td>
+                    <td style="padding:8px 6px;font-size:13px;">{html.escape((s['school_name'] or '').strip())}</td>
+                    <td style="padding:8px 6px;font-size:13px;">{html.escape((s['program_name'] or '').strip())}</td>
+                    <td style="padding:8px 6px;font-size:13px;">{html.escape((s['teacher_name'] or '').strip())}</td>
+                    <td style="padding:8px 6px;font-size:13px;"><span style="border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700;color:{badge_color};background:{badge_bg};">{html.escape(s['status'] or '已排')}</span></td>
+                    <td style="padding:8px 6px;font-size:13px;">{html.escape((s['note'] or '').strip())}</td>
+                </tr>
+            """)
+        day_cards.append(f"""
+            <div style="border:1px solid {'#b89d5d' if is_today else '#e5e7eb'};border-radius:16px;background:{'#f4ead2' if is_today else '#fff'};overflow:hidden;">
+                <div style="padding:12px 14px;border-bottom:1px solid {'#b89d5d' if is_today else '#e5e7eb'};background:{'#f4ead2' if is_today else '#f9fafb'};">
+                    <strong>{weekday_labels[i]}</strong>
+                    <span style="color:#6b7280;font-size:13px;margin-left:6px;">{d.month}/{d.day}</span>
+                    {'<span style="margin-left:8px;border-radius:999px;padding:2px 8px;font-size:11px;background:#b89d5d;color:#fff;">今日</span>' if is_today else ''}
+                    <span style="float:right;font-size:13px;color:#6b7280;">{len(day_sessions)} 堂</span>
+                </div>
+                <div style="padding:0;">
+                    {f'<table style="width:100%;border-collapse:collapse;"><tbody>{"".join(session_rows)}</tbody></table>' if session_rows else '<div style="padding:14px;color:#9ca3af;font-size:13px;">沒有課堂</div>'}
+                </div>
+            </div>
+        """)
+    return f"""
+    <html lang="zh-HK">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{APP_NAME} - 校曆</title>
+        <style>
+            :root {{ --bg:#f5f1e8; --paper:#ffffff; --ink:#101114; --muted:#5f646d; --line:rgba(16,17,20,.10); --accent:#b89d5d; --accent-soft:#f4ead2; }}
+            * {{ box-sizing:border-box; }}
+            body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif; background:var(--bg); color:var(--ink); }}
+            .container {{ max-width:1200px; margin:0 auto; padding:20px; }}
+            .toolbar {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }}
+            .toolbar a {{ text-decoration:none; color:#111; background:#fff; border:1px solid var(--line); padding:8px 12px; border-radius:10px; font-size:13px; }}
+            .toolbar a.primary {{ background:#111; color:#fff; border-color:#111; }}
+            .day-grid {{ display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); }}
+            @media (min-width:900px) {{ .day-grid {{ grid-template-columns:repeat(3,1fr); }} }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="toolbar">
+                <a href="/dashboard">← 返回 Dashboard</a>
+                <a href="/calendar?week_offset={prev_offset}">← 上週</a>
+                <strong>{monday.month}/{monday.day} – {sunday.month}/{sunday.day}</strong>
+                <a href="/calendar?week_offset={next_offset}">下週 →</a>
+                <span style="margin-left:auto;font-size:13px;color:var(--muted);">本週共 {len(rows)} 堂</span>
+            </div>
+            <div class="day-grid">
+                {''.join(day_cards)}
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+
+@app.get("/calendar", response_class=HTMLResponse)
+async def calendar_page(request: Request, week_offset: int = 0):
+    if not _current_user_record(request):
+        return RedirectResponse("/", status_code=303)
+    return HTMLResponse(_render_calendar_page(request, week_offset=week_offset))
 
 
 def _attendance_status_badge(status: str):
@@ -10120,6 +10295,64 @@ def init_salary_db():
         )
     """)
     c.execute("""
+        CREATE TABLE IF NOT EXISTS school_programs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            school_id INTEGER,
+            school_year TEXT DEFAULT '',
+            weekday TEXT DEFAULT '',
+            program_name TEXT DEFAULT '',
+            default_start_time TEXT DEFAULT '',
+            default_end_time TEXT DEFAULT '',
+            duration_minutes INTEGER DEFAULT 0,
+            teacher_id INTEGER,
+            teacher_name_snapshot TEXT DEFAULT '',
+            source_sheet_url TEXT DEFAULT '',
+            source_row_key TEXT DEFAULT '',
+            source_raw_text TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(school_id) REFERENCES schools(id),
+            FOREIGN KEY(teacher_id) REFERENCES teachers(id)
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS school_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            program_id INTEGER NOT NULL,
+            session_date TEXT NOT NULL,
+            start_time TEXT DEFAULT '',
+            end_time TEXT DEFAULT '',
+            session_type TEXT DEFAULT '課堂',
+            status TEXT DEFAULT '已排',
+            original_session_id INTEGER,
+            note TEXT DEFAULT '',
+            source_text TEXT DEFAULT '',
+            source_hash TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(program_id) REFERENCES school_programs(id),
+            FOREIGN KEY(original_session_id) REFERENCES school_sessions(id)
+        )
+    """)
+    c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_school_sessions_program_date
+        ON school_sessions(program_id, session_date)
+    """)
+    c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_school_sessions_date
+        ON school_sessions(session_date)
+    """)
+    c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_school_sessions_status
+        ON school_sessions(status)
+    """)
+    c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_school_programs_school_year
+        ON school_programs(school_year)
+    """)
+    c.execute("""
         CREATE TABLE IF NOT EXISTS salary_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             teacher_id INTEGER,
@@ -11994,6 +12227,227 @@ def _school_schedules_fetch(school_year: str = ""):
     return rows
 
 
+def _school_calendar_preview_html(preview, sheet_url: str = "", school_year: str = ""):
+    summary = preview.get("summary", {})
+    status_meta = {
+        "ready": ("可匯入", "#166534", "#dcfce7"),
+        "review": ("需覆核", "#92400e", "#fef3c7"),
+        "incomplete": ("資料不足", "#991b1b", "#fee2e2"),
+    }
+    cards = []
+    for program in preview.get("programs", []):
+        label, color, background = status_meta.get(program.get("status"), ("未知", "#374151", "#f3f4f6"))
+        dates = [event.get("session_date", "") for event in program.get("events", [])]
+        date_preview = "、".join(html.escape(value) for value in dates[:18])
+        if len(dates) > 18:
+            date_preview += f"……另有 {len(dates) - 18} 個日期"
+        if not date_preview:
+            date_preview = "未解析到日期"
+        teachers = " / ".join(program.get("teacher_names", [])) or "未有導師"
+        time_label = "-".join(
+            value for value in [program.get("start_time", ""), program.get("end_time", "")] if value
+        ) or program.get("time_text", "") or "未有時間"
+        warnings_html = "".join(
+            f"<li>{html.escape(str(warning))}</li>" for warning in program.get("warnings", [])
+        ) or "<li>沒有警告</li>"
+        raw_schedule = html.escape(program.get("schedule_text", "") or "（空白）")
+        cards.append(
+            f"""
+            <article style="border:1px solid #e5e7eb;border-radius:16px;padding:16px;background:#fff;">
+                <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+                    <div>
+                        <div style="font-size:12px;color:#6b7280;">來源第 {int(program.get('source_row', 0))} 行 · {html.escape(program.get('weekday', '') or '未分類星期')}</div>
+                        <h4 style="margin:5px 0 2px;">{html.escape(program.get('school_name', '') or '未有校名')}</h4>
+                        <div style="color:#4b5563;white-space:pre-wrap;">{html.escape(program.get('program_name', '') or '未有班別名稱')}</div>
+                    </div>
+                    <span style="border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700;color:{color};background:{background};">{label}</span>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:12px;font-size:13px;">
+                    <div><strong>時間</strong><br>{html.escape(time_label)}</div>
+                    <div><strong>導師</strong><br>{html.escape(teachers)}</div>
+                    <div><strong>解析日期</strong><br>{int(program.get('parsed_session_count', 0))} 個</div>
+                    <div><strong>原表總堂數</strong><br>{html.escape(str(program.get('expected_total') or '未提供'))}</div>
+                </div>
+                <div style="margin-top:12px;font-size:13px;line-height:1.7;"><strong>日期：</strong>{date_preview}</div>
+                <ul style="margin:10px 0 0;padding-left:20px;color:#7c2d12;font-size:13px;line-height:1.7;">{warnings_html}</ul>
+                <details style="margin-top:10px;">
+                    <summary style="cursor:pointer;color:#4b5563;font-size:13px;">查看原始日期文字</summary>
+                    <pre style="white-space:pre-wrap;background:#f8fafc;border-radius:10px;padding:10px;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;">{raw_schedule}</pre>
+                </details>
+            </article>
+            """
+        )
+
+    warning_types = summary.get("warning_types", {})
+    warning_summary = "".join(
+        f"<li>{html.escape(str(name))}：{int(count)}</li>" for name, count in warning_types.items()
+    ) or "<li>沒有警告</li>"
+    return f"""
+    <div class="alert-info" style="border-left:5px solid #2563eb;">
+        <strong>只讀預覽：沒有寫入任何學校、課堂、點名或薪酬資料。</strong><br>
+        已固定只處理來源第1至75行；第76行開始全部排除。
+    </div>
+    <div class="stats">
+        <div class="stat-card"><div class="num">{int(summary.get('included_rows', 0))}</div><div class="label">候選班別行</div></div>
+        <div class="stat-card"><div class="num">{int(summary.get('parsed_sessions', 0))}</div><div class="label">解析日期</div></div>
+        <div class="stat-card"><div class="num">{int(summary.get('ready_rows', 0))}</div><div class="label">可匯入</div></div>
+        <div class="stat-card"><div class="num">{int(summary.get('review_rows', 0))}</div><div class="label">需覆核</div></div>
+        <div class="stat-card"><div class="num">{int(summary.get('incomplete_rows', 0))}</div><div class="label">資料不足</div></div>
+        <div class="stat-card"><div class="num">{int(summary.get('excluded_after_cutoff', 0))}</div><div class="label">第76行後排除</div></div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+        <h3>警告分類</h3>
+        <ul style="line-height:1.8;">{warning_summary}</ul>
+    </div>
+    <div style="display:grid;gap:12px;margin-top:16px;">{''.join(cards) or '<div class="card">沒有可預覽資料。</div>'}</div>
+    {confirm_form}
+    """
+
+
+def _get_weekly_sessions(start_date: date, end_date: date):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT
+            ss.id,
+            ss.session_date,
+            ss.start_time,
+            ss.end_time,
+            ss.session_type,
+            ss.status,
+            ss.note,
+            sp.program_name,
+            sp.weekday,
+            sc.name AS school_name,
+            t.name AS teacher_name
+        FROM school_sessions ss
+        JOIN school_programs sp ON sp.id = ss.program_id
+        LEFT JOIN schools sc ON sc.id = sp.school_id
+        LEFT JOIN teachers t ON t.id = sp.teacher_id
+        WHERE ss.session_date BETWEEN ? AND ?
+          AND ss.status <> '取消'
+          AND sp.is_active = 1
+        ORDER BY ss.session_date, ss.start_time, sc.name, sp.program_name
+        """,
+        (start_date.isoformat(), end_date.isoformat()),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+def _get_session_summary():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    today = datetime.now().date().isoformat()
+    cursor.execute(
+        "SELECT COUNT(*) FROM school_sessions WHERE session_date = ? AND status <> '取消'",
+        (today,),
+    )
+    today_count = cursor.fetchone()[0] or 0
+    monday = datetime.now().date() - timedelta(days=datetime.now().weekday())
+    sunday = monday + timedelta(days=6)
+    cursor.execute(
+        "SELECT COUNT(*) FROM school_sessions WHERE session_date BETWEEN ? AND ? AND status <> '取消'",
+        (monday.isoformat(), sunday.isoformat()),
+    )
+    week_count = cursor.fetchone()[0] or 0
+    conn.close()
+    return {"today": today_count, "week": week_count}
+
+
+def _write_school_calendar_preview(conn, preview: dict, school_year: str = ""):
+    cursor = conn.cursor()
+    imported = 0
+    for program in preview.get("programs", []):
+        if program.get("status") != "ready":
+            continue
+        school_name = program.get("school_name", "").strip()
+        if not school_name:
+            continue
+        cursor.execute(
+            "SELECT id FROM schools WHERE name = ? AND school_year = ? LIMIT 1",
+            (school_name, school_year),
+        )
+        row = cursor.fetchone()
+        school_id = row[0] if row else None
+        if not school_id:
+            cursor.execute(
+                "INSERT INTO schools (school_year, name, is_active, created_at, updated_at) VALUES (?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                (school_year, school_name),
+            )
+            school_id = cursor.lastrowid
+        teacher_name = (program.get("teacher_names", [""]) or [""])[0].strip()
+        cursor.execute(
+            "SELECT id FROM teachers WHERE name = ? AND is_active = 1 LIMIT 1",
+            (teacher_name,),
+        )
+        trow = cursor.fetchone()
+        teacher_id = trow[0] if trow else None
+        cursor.execute(
+            """
+            INSERT INTO school_programs
+                (school_id, school_year, weekday, program_name, default_start_time, default_end_time,
+                 teacher_id, teacher_name_snapshot, source_sheet_url, source_row_key, source_raw_text,
+                 notes, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (
+                school_id,
+                school_year,
+                program.get("weekday", ""),
+                program.get("program_name", ""),
+                program.get("start_time", ""),
+                program.get("end_time", ""),
+                teacher_id,
+                teacher_name,
+                program.get("source_sheet_url", ""),
+                str(program.get("source_row", "")),
+                program.get("schedule_text", ""),
+                "; ".join(program.get("warnings", [])),
+            ),
+        )
+        program_id = cursor.lastrowid
+        for event in program.get("events", []):
+            session_date = event.get("session_date", "")
+            if not session_date:
+                continue
+            source_text = event.get("source_text", "")
+            source_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()[:16]
+            cursor.execute(
+                """
+                SELECT id FROM school_sessions
+                WHERE program_id = ? AND session_date = ? AND source_hash = ?
+                LIMIT 1
+                """,
+                (program_id, session_date, source_hash),
+            )
+            if cursor.fetchone():
+                continue
+            cursor.execute(
+                """
+                INSERT INTO school_sessions
+                    (program_id, session_date, start_time, end_time, session_type,
+                     status, note, source_text, source_hash, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, '已排', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (
+                    program_id,
+                    session_date,
+                    event.get("start_time", program.get("start_time", "")),
+                    event.get("end_time", program.get("end_time", "")),
+                    event.get("session_type", "課堂"),
+                    event.get("note", ""),
+                    source_text,
+                    source_hash,
+                ),
+            )
+            imported += 1
+    return imported
+
+
 def _teacher_form_html(request: Request, teacher=None):
     teacher = teacher or ("", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 1)
     tid = teacher[0] if len(teacher) > 0 else ""
@@ -12472,6 +12926,26 @@ async def salary_import_page(request: Request, user: tuple = Depends(require_rol
     <div class="alert-info">📥 支援 CSV 匯入導師同班別。建議先匯入導師，再匯入班別。匯入前可先用重置按鈕清空舊資料。</div>
     <div class="alert-info">📌 每月薪金可以直接匯入 Google Sheets 匯出 CSV，系統會自動寫入 `salary_records`，之後可按月份翻查。</div>
     <div class="stack" style="margin-bottom:18px;">
+        <form action="/salary/import/school-calendar-preview" method="post" enctype="multipart/form-data">
+            {csrf_html}
+            <div class="stack">
+                <strong>📅 2026–27 學校課堂日期預覽（不寫入資料庫）</strong>
+                <div class="muted">先解析 Google Sheet 的日期、時間、導師、「同上」及特別活動。按指示只處理第1至75行，第76行開始全部排除。</div>
+                <div class="flex">
+                    <div>
+                        <label style="display:block;margin-bottom:4px;">學年</label>
+                        <input type="text" name="school_year" value="2026-27" style="width:120px;padding:8px 10px;border:1px solid #ccc;border-radius:4px;">
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:4px;">最後處理行</label>
+                        <input type="number" name="max_source_row" value="75" min="2" max="10000" readonly style="width:110px;padding:8px 10px;border:1px solid #ccc;border-radius:4px;background:#f5f5f5;">
+                    </div>
+                </div>
+                <input type="file" name="file" accept=".csv,text/csv">
+                <input type="url" name="sheet_url" placeholder="https://docs.google.com/spreadsheets/d/..." style="width:100%;padding:8px 10px;border:1px solid #ccc;border-radius:4px;">
+                <button type="submit" class="btn btn-primary">只讀解析並預覽</button>
+            </div>
+        </form>
         <form action="/salary/import/schools-csv" method="post" enctype="multipart/form-data">
             {csrf_html}
             <div class="stack">
@@ -12809,6 +13283,100 @@ async def salary_import_payroll_csv(
     return HTMLResponse(
         f"{SALARY_HEADER}<div class='container'><div class='card'><h3>✅ {label} 薪金匯入完成</h3><p>成功寫入 {result['records']} 筆薪金記錄，新增 {result['teachers']} 位導師資料，跳過 {result['skipped']} 筆金額為 0 的資料。總金額：${result['total_amount']:,.0f}</p><br><a href='/salary/records?year={year}&month={month}' class='btn btn-primary'>查看 {label} 記錄</a> <a href='/salary/import' class='btn btn-outline'>返回</a></div></div>{SALARY_FOOTER}"
     )
+
+
+@app.post("/salary/import/school-calendar-preview")
+async def salary_import_school_calendar_preview(
+    request: Request,
+    file: Optional[UploadFile] = File(None),
+    sheet_url: str = Form(""),
+    school_year: str = Form("2026-27"),
+    max_source_row: int = Form(75),
+    user: tuple = Depends(require_roles("admin", "finance")),
+):
+    del request, user, max_source_row  # Preview is deliberately non-mutating; the row limit is fixed below.
+    csv_text = ""
+    try:
+        if file and getattr(file, "filename", ""):
+            csv_text = _csv_text_from_upload(file)
+        elif sheet_url.strip():
+            csv_text = _download_text_from_url(_normalize_payroll_sheet_url(sheet_url))
+    except Exception as exc:
+        return HTMLResponse(
+            f"{SALARY_HEADER}<div class='container'><div class='card'><h3>❌ 讀取來源失敗</h3><p>{html.escape(str(exc))}</p><br><a href='/salary/import' class='btn btn-primary'>返回</a></div></div>{SALARY_FOOTER}",
+            status_code=400,
+        )
+    if not csv_text.strip():
+        return HTMLResponse(
+            f"{SALARY_HEADER}<div class='container'><div class='card'><h3>❌ 未有可預覽內容</h3><p>請提供 CSV 檔案或 Google Sheets URL。</p><br><a href='/salary/import' class='btn btn-primary'>返回</a></div></div>{SALARY_FOOTER}",
+            status_code=400,
+        )
+    preview = parse_school_calendar_csv(
+        csv_text,
+        school_year=school_year.strip() or "2026-27",
+        max_source_row=75,
+    )
+    body = _school_calendar_preview_html(preview, sheet_url=sheet_url, school_year=school_year)
+    return render_salary_page("📅 2026–27 學校課堂日期預覽", body)
+
+
+@app.post("/salary/import/school-calendar-confirm")
+async def salary_import_school_calendar_confirm(
+    request: Request,
+    file: Optional[UploadFile] = File(None),
+    sheet_url: str = Form(""),
+    school_year: str = Form("2026-27"),
+    user: tuple = Depends(require_roles("admin", "finance")),
+):
+    csv_text = ""
+    try:
+        if file and getattr(file, "filename", ""):
+            csv_text = _csv_text_from_upload(file)
+        elif sheet_url.strip():
+            csv_text = _download_text_from_url(_normalize_payroll_sheet_url(sheet_url))
+    except Exception as exc:
+        return HTMLResponse(
+            f"{SALARY_HEADER}<div class='container'><div class='card'><h3>❌ 讀取來源失敗</h3><p>{html.escape(str(exc))}</p><br><a href='/salary/import' class='btn btn-primary'>返回</a></div></div>{SALARY_FOOTER}",
+            status_code=400,
+        )
+    if not csv_text.strip():
+        return HTMLResponse(
+            f"{SALARY_HEADER}<div class='container'><div class='card'><h3>❌ 未有可匯入內容</h3><p>請提供 CSV 檔案或 Google Sheets URL。</p><br><a href='/salary/import' class='btn btn-primary'>返回</a></div></div>{SALARY_FOOTER}",
+            status_code=400,
+        )
+    preview = parse_school_calendar_csv(
+        csv_text,
+        school_year=school_year.strip() or "2026-27",
+        max_source_row=75,
+    )
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        imported = _write_school_calendar_preview(conn, preview, school_year=school_year.strip() or "2026-27")
+        conn.commit()
+        _audit_action_request(
+            request, "import_school_calendar", target_type="school_sessions", target_id="",
+            result="ok", metadata={"school_year": school_year, "imported_sessions": imported}
+        )
+    except Exception as exc:
+        conn.rollback()
+        return HTMLResponse(
+            f"{SALARY_HEADER}<div class='container'><div class='card'><h3>❌ 匯入失敗</h3><p>{html.escape(str(exc))}</p><br><a href='/salary/import' class='btn btn-primary'>返回</a></div></div>{SALARY_FOOTER}",
+            status_code=500,
+        )
+    finally:
+        conn.close()
+    body = f"""
+        <div class="card">
+            <h3>✅ 匯入成功</h3>
+            <p>已寫入 {imported} 個課堂日期。</p>
+            <p>學年：{html.escape(school_year)}</p>
+            <div class="flex" style="margin-top:16px;">
+                <a href="/calendar" class="btn btn-primary">查看校曆</a>
+                <a href="/salary/import" class="btn btn-outline">返回匯入頁</a>
+            </div>
+        </div>
+    """
+    return render_salary_page("📅 學校課堂日期匯入結果", body)
 
 
 @app.post("/salary/import/schools-csv")
