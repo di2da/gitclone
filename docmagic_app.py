@@ -4535,102 +4535,377 @@ async def dashboard(request: Request):
     return HTMLResponse(_render_dashboard_page(request))
 
 
-def _render_calendar_page(request: Request, week_offset: int = 0, view: str = "week"):
+def _get_calendar_filter_options():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT name FROM schools WHERE is_active=1 ORDER BY name")
+    schools = [r["name"] for r in cursor.fetchall()]
+    cursor.execute("SELECT DISTINCT name FROM teachers WHERE is_active=1 ORDER BY name")
+    teachers = [r["name"] for r in cursor.fetchall()]
+    conn.close()
+    return {"schools": schools, "teachers": teachers}
+
+
+SESSION_TYPE_COLORS = {
+    "課堂": ("#166534", "#dcfce7"),
+    "選拔": ("#1e40af", "#dbeafe"),
+    "綵排": ("#92400e", "#fef3c7"),
+    "表演": ("#9f1239", "#ffe4e6"),
+    "補課": ("#065f46", "#d1fae5"),
+    "後備日": ("#4b5563", "#f3f4f6"),
+    "其他": ("#374151", "#f3f4f6"),
+}
+
+STATUS_COLORS = {
+    "已排": ("#166534", "#dcfce7"),
+    "已完成": ("#1d4ed8", "#dbeafe"),
+    "改期": ("#92400e", "#fef3c7"),
+    "取消": ("#991b1b", "#fee2e2"),
+    "待確認": ("#4b5563", "#f3f4f6"),
+}
+
+
+def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: int = 0, view: str = "week", school_filter: str = "", teacher_filter: str = "", status_filter: str = "", type_filter: str = ""):
     now = datetime.now()
-    base_date = now.date() + timedelta(weeks=week_offset)
-    monday = base_date - timedelta(days=base_date.weekday())
-    sunday = monday + timedelta(days=6)
-    prev_offset = week_offset - 1
-    next_offset = week_offset + 1
-    rows = _get_weekly_sessions(monday, sunday)
-    user = _current_user_record(request)
-    role_label = ""
-    if user:
-        role_label = _normalize_role(user[3]).capitalize()
-    weekday_labels = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
-    day_cards = []
-    for i in range(7):
-        d = monday + timedelta(days=i)
-        is_today = (d == now.date())
-        day_sessions = [r for r in rows if r["session_date"] == d.isoformat()]
-        session_rows = []
-        for s in day_sessions:
-            badge_color = {
-                "已完成": "#166534",
-                "改期": "#92400e",
-                "取消": "#991b1b",
-                "待確認": "#4b5563",
-            }.get(s["status"], "#166534")
-            badge_bg = {
-                "已完成": "#dcfce7",
-                "改期": "#fef3c7",
-                "取消": "#fee2e2",
-                "待確認": "#f3f4f6",
-            }.get(s["status"], "#dcfce7")
-            session_rows.append(f"""
-                <tr>
-                    <td style="padding:8px 6px;font-size:13px;">{html.escape((s['start_time'] or '').strip())}</td>
-                    <td style="padding:8px 6px;font-size:13px;">{html.escape((s['school_name'] or '').strip())}</td>
-                    <td style="padding:8px 6px;font-size:13px;">{html.escape((s['program_name'] or '').strip())}</td>
-                    <td style="padding:8px 6px;font-size:13px;">{html.escape((s['teacher_name'] or '').strip())}</td>
-                    <td style="padding:8px 6px;font-size:13px;"><span style="border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700;color:{badge_color};background:{badge_bg};">{html.escape(s['status'] or '已排')}</span></td>
-                    <td style="padding:8px 6px;font-size:13px;">{html.escape((s['note'] or '').strip())}</td>
-                </tr>
+    filter_options = _get_calendar_filter_options()
+    # Build filter query conditions
+    filters = []
+    params = []
+    if school_filter.strip():
+        filters.append("sc.name = ?")
+        params.append(school_filter.strip())
+    if teacher_filter.strip():
+        filters.append("t.name = ?")
+        params.append(teacher_filter.strip())
+    if status_filter.strip():
+        filters.append("ss.status = ?")
+        params.append(status_filter.strip())
+    if type_filter.strip():
+        filters.append("ss.session_type = ?")
+        params.append(type_filter.strip())
+    where_clause = " AND ".join(filters) if filters else "1=1"
+
+    if view == "month":
+        # Month view
+        base_date = (now.date().replace(day=1)) + timedelta(days=month_offset * 30)
+        # Adjust to actual month
+        year = base_date.year
+        month = base_date.month
+        # Get first day of month
+        first_day = date(year, month, 1)
+        # Get last day of month
+        if month == 12:
+            last_day = date(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            last_day = date(year, month + 1, 1) - timedelta(days=1)
+        # Calendar starts from Sunday before first_day
+        calendar_start = first_day - timedelta(days=(first_day.weekday() + 1) % 7)
+        # Calendar ends on Saturday after last_day
+        calendar_end = last_day + timedelta(days=(6 - last_day.weekday()) % 7)
+        if calendar_end.weekday() != 6:  # Ensure it's Saturday (6 in Python where Monday=0)
+            calendar_end = last_day + timedelta(days=(5 - last_day.weekday()) % 7 + 1)
+        # Actually in Python Monday=0, Sunday=6. We want calendar to start on Sunday.
+        # So days before first_day: first_day.weekday() + 1, but if first_day is Sunday (6), we want 0.
+        days_before = (first_day.weekday() + 1) % 7
+        calendar_start = first_day - timedelta(days=days_before)
+        days_after = (6 - last_day.weekday()) % 7
+        calendar_end = last_day + timedelta(days=days_after)
+        
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT
+                ss.id, ss.session_date, ss.start_time, ss.end_time,
+                ss.session_type, ss.status, ss.note,
+                sp.program_name, sc.name AS school_name, t.name AS teacher_name
+            FROM school_sessions ss
+            JOIN school_programs sp ON sp.id = ss.program_id
+            LEFT JOIN schools sc ON sc.id = sp.school_id
+            LEFT JOIN teachers t ON t.id = sp.teacher_id
+            WHERE ss.session_date BETWEEN ? AND ?
+              AND ss.status <> '取消'
+              AND sp.is_active = 1
+              AND {where_clause}
+            ORDER BY ss.session_date, ss.start_time, sc.name, sp.program_name
+            """,
+            (calendar_start.isoformat(), calendar_end.isoformat()) + tuple(params),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Group by date
+        sessions_by_date = {}
+        for r in rows:
+            d = r["session_date"]
+            if d not in sessions_by_date:
+                sessions_by_date[d] = []
+            sessions_by_date[d].append(r)
+        
+        # Build calendar grid
+        week_rows = []
+        current_date = calendar_start
+        while current_date <= calendar_end:
+            week_cells = []
+            for _ in range(7):
+                is_today = (current_date == now.date())
+                is_current_month = (current_date.month == month)
+                day_sessions = sessions_by_date.get(current_date.isoformat(), [])
+                session_dots = []
+                for s in day_sessions[:5]:
+                    typ_color = SESSION_TYPE_COLORS.get(s["session_type"] or "課堂", ("#374151", "#f3f4f6"))[0]
+                    session_dots.append(f'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:{typ_color};margin-right:2px;"></span>')
+                if len(day_sessions) > 5:
+                    session_dots.append(f'<span style="font-size:10px;color:#6b7280;">+{len(day_sessions)-5}</span>')
+                
+                cell_content = f"""
+                    <div style="font-size:11px;color:{'#111' if is_current_month else '#9ca3af'};margin-bottom:2px;">{current_date.day}</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:1px;">{''.join(session_dots)}</div>
+                    {f'<div style="font-size:10px;color:#6b7280;margin-top:2px;">{len(day_sessions)}堂</div>' if day_sessions else ''}
+                """
+                week_cells.append(f"""
+                    <td style="width:14.28%;height:90px;border:1px solid #e5e7eb;padding:4px;vertical-align:top;background:{'#f4ead2' if is_today else ('#fff' if is_current_month else '#f9fafb')};cursor:pointer;"
+                        onclick="window.location.href='/calendar?view=week&week_offset={(current_date - now.date()).days // 7}'">
+                        {cell_content}
+                    </td>
+                """)
+                current_date += timedelta(days=1)
+            week_rows.append(f"<tr>{''.join(week_cells)}</tr>")
+        
+        prev_month = month_offset - 1
+        next_month = month_offset + 1
+        month_name = f"{year}年{month}月"
+        
+        return f"""
+        <html lang="zh-HK">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>{APP_NAME} - 校曆</title>
+            <style>
+                :root {{ --bg:#f5f1e8; --paper:#ffffff; --ink:#101114; --muted:#5f646d; --line:rgba(16,17,20,.10); --accent:#b89d5d; --accent-soft:#f4ead2; }}
+                * {{ box-sizing:border-box; }}
+                body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif; background:var(--bg); color:var(--ink); }}
+                .container {{ max-width:1200px; margin:0 auto; padding:20px; }}
+                .toolbar {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }}
+                .toolbar a, .toolbar button {{ text-decoration:none; color:#111; background:#fff; border:1px solid var(--line); padding:8px 12px; border-radius:10px; font-size:13px; cursor:pointer; }}
+                .toolbar a.primary, .toolbar button.primary {{ background:#111; color:#fff; border-color:#111; }}
+                .filter-bar {{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; padding:12px; background:#fff; border-radius:12px; border:1px solid var(--line); }}
+                .filter-bar select {{ padding:6px 10px; border-radius:8px; border:1px solid #e5e7eb; font-size:13px; }}
+                .calendar-table {{ width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; }}
+                .calendar-table th {{ padding:10px; background:#f9fafb; border:1px solid #e5e7eb; font-size:13px; font-weight:600; }}
+                .legend {{ display:flex; gap:12px; flex-wrap:wrap; margin-top:16px; padding:12px; background:#fff; border-radius:12px; border:1px solid var(--line); }}
+                .legend-item {{ display:flex; align-items:center; gap:4px; font-size:12px; }}
+                .legend-dot {{ width:10px; height:10px; border-radius:50%; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="toolbar">
+                    <a href="/dashboard">← 返回 Dashboard</a>
+                    <a href="/calendar?view=month&month_offset={prev_month}{f'&school={html.escape(school_filter, quote=True)}' if school_filter else ''}{f'&teacher={html.escape(teacher_filter, quote=True)}' if teacher_filter else ''}{f'&status={html.escape(status_filter, quote=True)}' if status_filter else ''}{f'&type={html.escape(type_filter, quote=True)}' if type_filter else ''}">← 上月</a>
+                    <strong>{month_name}</strong>
+                    <a href="/calendar?view=month&month_offset={next_month}{f'&school={html.escape(school_filter, quote=True)}' if school_filter else ''}{f'&teacher={html.escape(teacher_filter, quote=True)}' if teacher_filter else ''}{f'&status={html.escape(status_filter, quote=True)}' if status_filter else ''}{f'&type={html.escape(type_filter, quote=True)}' if type_filter else ''}">下月 →</a>
+                    <a href="/calendar?view=week" class="primary">週視圖</a>
+                    <span style="margin-left:auto;font-size:13px;color:var(--muted);">本月共 {len(rows)} 堂</span>
+                </div>
+                <form method="get" action="/calendar" class="filter-bar">
+                    <input type="hidden" name="view" value="month">
+                    <input type="hidden" name="month_offset" value="{month_offset}">
+                    <select name="school" onchange="this.form.submit()">
+                        <option value="">全部學校</option>
+                        {''.join(f'<option value="{html.escape(s, quote=True)}"{" selected" if s == school_filter else ""}>{html.escape(s)}</option>' for s in filter_options["schools"])}
+                    </select>
+                    <select name="teacher" onchange="this.form.submit()">
+                        <option value="">全部導師</option>
+                        {''.join(f'<option value="{html.escape(t, quote=True)}"{" selected" if t == teacher_filter else ""}>{html.escape(t)}</option>' for t in filter_options["teachers"])}
+                    </select>
+                    <select name="status" onchange="this.form.submit()">
+                        <option value="">全部狀態</option>
+                        {''.join(f'<option value="{html.escape(st, quote=True)}"{" selected" if st == status_filter else ""}>{html.escape(st)}</option>' for st in ["已排", "已完成", "改期", "取消", "待確認"])}
+                    </select>
+                    <select name="type" onchange="this.form.submit()">
+                        <option value="">全部類型</option>
+                        {''.join(f'<option value="{html.escape(tp, quote=True)}"{" selected" if tp == type_filter else ""}>{html.escape(tp)}</option>' for tp in ["課堂", "選拔", "綵排", "表演", "補課", "後備日", "其他"])}
+                    </select>
+                    <a href="/calendar?view=month" style="font-size:12px;color:#6b7280;">清除篩選</a>
+                </form>
+                <table class="calendar-table">
+                    <thead>
+                        <tr>
+                            <th>日</th><th>一</th><th>二</th><th>三</th><th>四</th><th>五</th><th>六</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {''.join(week_rows)}
+                    </tbody>
+                </table>
+                <div class="legend">
+                    {''.join(f'<div class="legend-item"><span class="legend-dot" style="background:{SESSION_TYPE_COLORS.get(tp, ("#374151", "#f3f4f6"))[0]};"></span>{tp}</div>' for tp in ["課堂", "選拔", "綵排", "表演", "補課", "後備日"])}
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+    else:
+        # Week view (default)
+        base_date = now.date() + timedelta(weeks=week_offset)
+        monday = base_date - timedelta(days=base_date.weekday())
+        sunday = monday + timedelta(days=6)
+        prev_offset = week_offset - 1
+        next_offset = week_offset + 1
+        
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT
+                ss.id, ss.session_date, ss.start_time, ss.end_time,
+                ss.session_type, ss.status, ss.note,
+                sp.program_name, sp.weekday, sc.name AS school_name, t.name AS teacher_name
+            FROM school_sessions ss
+            JOIN school_programs sp ON sp.id = ss.program_id
+            LEFT JOIN schools sc ON sc.id = sp.school_id
+            LEFT JOIN teachers t ON t.id = sp.teacher_id
+            WHERE ss.session_date BETWEEN ? AND ?
+              AND ss.status <> '取消'
+              AND sp.is_active = 1
+              AND {where_clause}
+            ORDER BY ss.session_date, ss.start_time, sc.name, sp.program_name
+            """,
+            (monday.isoformat(), sunday.isoformat()) + tuple(params),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        
+        weekday_labels = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        day_cards = []
+        for i in range(7):
+            d = monday + timedelta(days=i)
+            is_today = (d == now.date())
+            day_sessions = [r for r in rows if r["session_date"] == d.isoformat()]
+            session_rows = []
+            for s in day_sessions:
+                status_color, status_bg = STATUS_COLORS.get(s["status"] or "已排", ("#166534", "#dcfce7"))
+                type_color, type_bg = SESSION_TYPE_COLORS.get(s["session_type"] or "課堂", ("#374151", "#f3f4f6"))
+                session_rows.append(f"""
+                    <tr>
+                        <td style="padding:8px 6px;font-size:13px;">{html.escape((s['start_time'] or '').strip())}</td>
+                        <td style="padding:8px 6px;font-size:13px;"><span style="border-radius:999px;padding:2px 6px;font-size:10px;font-weight:700;color:{type_color};background:{type_bg};">{html.escape(s['session_type'] or '課堂')}</span></td>
+                        <td style="padding:8px 6px;font-size:13px;">{html.escape((s['school_name'] or '').strip())}</td>
+                        <td style="padding:8px 6px;font-size:13px;">{html.escape((s['program_name'] or '').strip())}</td>
+                        <td style="padding:8px 6px;font-size:13px;">{html.escape((s['teacher_name'] or '').strip())}</td>
+                        <td style="padding:8px 6px;font-size:13px;"><span style="border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700;color:{status_color};background:{status_bg};">{html.escape(s['status'] or '已排')}</span></td>
+                        <td style="padding:8px 6px;font-size:13px;">{html.escape((s['note'] or '').strip())}</td>
+                    </tr>
+                """)
+            day_cards.append(f"""
+                <div style="border:1px solid {'#b89d5d' if is_today else '#e5e7eb'};border-radius:16px;background:{'#f4ead2' if is_today else '#fff'};overflow:hidden;">
+                    <div style="padding:12px 14px;border-bottom:1px solid {'#b89d5d' if is_today else '#e5e7eb'};background:{'#f4ead2' if is_today else '#f9fafb'};">
+                        <strong>{weekday_labels[i]}</strong>
+                        <span style="color:#6b7280;font-size:13px;margin-left:6px;">{d.month}/{d.day}</span>
+                        {'<span style="margin-left:8px;border-radius:999px;padding:2px 8px;font-size:11px;background:#b89d5d;color:#fff;">今日</span>' if is_today else ''}
+                        <span style="float:right;font-size:13px;color:#6b7280;">{len(day_sessions)} 堂</span>
+                    </div>
+                    <div style="padding:0;">
+                        {f'<table style="width:100%;border-collapse:collapse;"><tbody>{"".join(session_rows)}</tbody></table>' if session_rows else '<div style="padding:14px;color:#9ca3af;font-size:13px;">沒有課堂</div>'}
+                    </div>
+                </div>
             """)
-        day_cards.append(f"""
-            <div style="border:1px solid {'#b89d5d' if is_today else '#e5e7eb'};border-radius:16px;background:{'#f4ead2' if is_today else '#fff'};overflow:hidden;">
-                <div style="padding:12px 14px;border-bottom:1px solid {'#b89d5d' if is_today else '#e5e7eb'};background:{'#f4ead2' if is_today else '#f9fafb'};">
-                    <strong>{weekday_labels[i]}</strong>
-                    <span style="color:#6b7280;font-size:13px;margin-left:6px;">{d.month}/{d.day}</span>
-                    {'<span style="margin-left:8px;border-radius:999px;padding:2px 8px;font-size:11px;background:#b89d5d;color:#fff;">今日</span>' if is_today else ''}
-                    <span style="float:right;font-size:13px;color:#6b7280;">{len(day_sessions)} 堂</span>
+        return f"""
+        <html lang="zh-HK">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>{APP_NAME} - 校曆</title>
+            <style>
+                :root {{ --bg:#f5f1e8; --paper:#ffffff; --ink:#101114; --muted:#5f646d; --line:rgba(16,17,20,.10); --accent:#b89d5d; --accent-soft:#f4ead2; }}
+                * {{ box-sizing:border-box; }}
+                body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif; background:var(--bg); color:var(--ink); }}
+                .container {{ max-width:1200px; margin:0 auto; padding:20px; }}
+                .toolbar {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }}
+                .toolbar a, .toolbar button {{ text-decoration:none; color:#111; background:#fff; border:1px solid var(--line); padding:8px 12px; border-radius:10px; font-size:13px; cursor:pointer; }}
+                .toolbar a.primary, .toolbar button.primary {{ background:#111; color:#fff; border-color:#111; }}
+                .filter-bar {{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; padding:12px; background:#fff; border-radius:12px; border:1px solid var(--line); }}
+                .filter-bar select {{ padding:6px 10px; border-radius:8px; border:1px solid #e5e7eb; font-size:13px; }}
+                .day-grid {{ display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); }}
+                @media (min-width:900px) {{ .day-grid {{ grid-template-columns:repeat(3,1fr); }} }}
+                .legend {{ display:flex; gap:12px; flex-wrap:wrap; margin-top:16px; padding:12px; background:#fff; border-radius:12px; border:1px solid var(--line); }}
+                .legend-item {{ display:flex; align-items:center; gap:4px; font-size:12px; }}
+                .legend-dot {{ width:10px; height:10px; border-radius:50%; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="toolbar">
+                    <a href="/dashboard">← 返回 Dashboard</a>
+                    <a href="/calendar?view=week&week_offset={prev_offset}{f'&school={html.escape(school_filter, quote=True)}' if school_filter else ''}{f'&teacher={html.escape(teacher_filter, quote=True)}' if teacher_filter else ''}{f'&status={html.escape(status_filter, quote=True)}' if status_filter else ''}{f'&type={html.escape(type_filter, quote=True)}' if type_filter else ''}">← 上週</a>
+                    <strong>{monday.month}/{monday.day} – {sunday.month}/{sunday.day}</strong>
+                    <a href="/calendar?view=week&week_offset={next_offset}{f'&school={html.escape(school_filter, quote=True)}' if school_filter else ''}{f'&teacher={html.escape(teacher_filter, quote=True)}' if teacher_filter else ''}{f'&status={html.escape(status_filter, quote=True)}' if status_filter else ''}{f'&type={html.escape(type_filter, quote=True)}' if type_filter else ''}">下週 →</a>
+                    <a href="/calendar?view=month" class="primary">月視圖</a>
+                    <span style="margin-left:auto;font-size:13px;color:var(--muted);">本週共 {len(rows)} 堂</span>
                 </div>
-                <div style="padding:0;">
-                    {f'<table style="width:100%;border-collapse:collapse;"><tbody>{"".join(session_rows)}</tbody></table>' if session_rows else '<div style="padding:14px;color:#9ca3af;font-size:13px;">沒有課堂</div>'}
+                <form method="get" action="/calendar" class="filter-bar">
+                    <input type="hidden" name="view" value="week">
+                    <input type="hidden" name="week_offset" value="{week_offset}">
+                    <select name="school" onchange="this.form.submit()">
+                        <option value="">全部學校</option>
+                        {''.join(f'<option value="{html.escape(s, quote=True)}"{" selected" if s == school_filter else ""}>{html.escape(s)}</option>' for s in filter_options["schools"])}
+                    </select>
+                    <select name="teacher" onchange="this.form.submit()">
+                        <option value="">全部導師</option>
+                        {''.join(f'<option value="{html.escape(t, quote=True)}"{" selected" if t == teacher_filter else ""}>{html.escape(t)}</option>' for t in filter_options["teachers"])}
+                    </select>
+                    <select name="status" onchange="this.form.submit()">
+                        <option value="">全部狀態</option>
+                        {''.join(f'<option value="{html.escape(st, quote=True)}"{" selected" if st == status_filter else ""}>{html.escape(st)}</option>' for st in ["已排", "已完成", "改期", "取消", "待確認"])}
+                    </select>
+                    <select name="type" onchange="this.form.submit()">
+                        <option value="">全部類型</option>
+                        {''.join(f'<option value="{html.escape(tp, quote=True)}"{" selected" if tp == type_filter else ""}>{html.escape(tp)}</option>' for tp in ["課堂", "選拔", "綵排", "表演", "補課", "後備日", "其他"])}
+                    </select>
+                    <a href="/calendar?view=week" style="font-size:12px;color:#6b7280;">清除篩選</a>
+                </form>
+                <div class="day-grid">
+                    {''.join(day_cards)}
+                </div>
+                <div class="legend">
+                    {''.join(f'<div class="legend-item"><span class="legend-dot" style="background:{SESSION_TYPE_COLORS.get(tp, ("#374151", "#f3f4f6"))[0]};"></span>{tp}</div>' for tp in ["課堂", "選拔", "綵排", "表演", "補課", "後備日"])}
                 </div>
             </div>
-        """)
-    return f"""
-    <html lang="zh-HK">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>{APP_NAME} - 校曆</title>
-        <style>
-            :root {{ --bg:#f5f1e8; --paper:#ffffff; --ink:#101114; --muted:#5f646d; --line:rgba(16,17,20,.10); --accent:#b89d5d; --accent-soft:#f4ead2; }}
-            * {{ box-sizing:border-box; }}
-            body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif; background:var(--bg); color:var(--ink); }}
-            .container {{ max-width:1200px; margin:0 auto; padding:20px; }}
-            .toolbar {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }}
-            .toolbar a {{ text-decoration:none; color:#111; background:#fff; border:1px solid var(--line); padding:8px 12px; border-radius:10px; font-size:13px; }}
-            .toolbar a.primary {{ background:#111; color:#fff; border-color:#111; }}
-            .day-grid {{ display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); }}
-            @media (min-width:900px) {{ .day-grid {{ grid-template-columns:repeat(3,1fr); }} }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="toolbar">
-                <a href="/dashboard">← 返回 Dashboard</a>
-                <a href="/calendar?week_offset={prev_offset}">← 上週</a>
-                <strong>{monday.month}/{monday.day} – {sunday.month}/{sunday.day}</strong>
-                <a href="/calendar?week_offset={next_offset}">下週 →</a>
-                <span style="margin-left:auto;font-size:13px;color:var(--muted);">本週共 {len(rows)} 堂</span>
-            </div>
-            <div class="day-grid">
-                {''.join(day_cards)}
-            </div>
-        </div>
-    </body>
-    </html>
-    """
+        </body>
+        </html>
+        """
 
 
 @app.get("/calendar", response_class=HTMLResponse)
-async def calendar_page(request: Request, week_offset: int = 0):
+async def calendar_page(
+    request: Request,
+    week_offset: int = 0,
+    month_offset: int = 0,
+    view: str = "week",
+    school: str = "",
+    teacher: str = "",
+    status: str = "",
+    type: str = "",
+):
     if not _current_user_record(request):
         return RedirectResponse("/", status_code=303)
-    return HTMLResponse(_render_calendar_page(request, week_offset=week_offset))
+    return HTMLResponse(
+        _render_calendar_page(
+            request,
+            week_offset=week_offset,
+            month_offset=month_offset,
+            view=view,
+            school_filter=school,
+            teacher_filter=teacher,
+            status_filter=status,
+            type_filter=type,
+        )
+    )
 
 
 def _attendance_status_badge(status: str):
