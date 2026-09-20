@@ -4121,6 +4121,8 @@ def _render_dashboard_page(request: Request):
                         <a class="link" href="/salary/classes"><strong>班別列表</strong><span>整理學校、星期、導師同時薪資料。</span></a>
                         <a class="link" href="/attendance"><strong>學生點名系統</strong><span>記錄各地區課堂出席、缺席同原因。</span></a>
                         <a class="link" href="/salary"><strong>薪酬管理</strong><span>查看薪酬總覽、匯入資料與計算記錄。</span></a>
+                        <a class="link" href="/calendar"><strong>學校校曆</strong><span>查看本週／本月學校課堂時間表與篩選。</span></a>
+                        <a class="link" href="/school-monitor"><strong>學校月報</strong><span>各校課堂統計、完成率、導師出勤與衝突警示。</span></a>
                         <a class="link" href="/announcements"><strong>軍團公告</strong><span>查看最新通知、時間表同內部消息。</span></a>
                         {f'<a class="link" href="/invoice"><strong>發票系統</strong><span>生成報價單、發票、收據同常用範本。</span></a>' if user and (user[3] or "").lower() == "admin" else '<div class="link" style="opacity:.55; pointer-events:none;"><strong>發票系統</strong><span>只限 admin 使用。</span></div>'}
                         {f'<a class="link" href="/invoice/scrc"><strong>性罪行查核信</strong><span>按範本快速生成查核證明信件。</span></a>' if user and (user[3] or "").lower() == "admin" else '<div class="link" style="opacity:.55; pointer-events:none;"><strong>性罪行查核信</strong><span>只限 admin 使用。</span></div>'}
@@ -4568,6 +4570,7 @@ STATUS_COLORS = {
 
 def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: int = 0, view: str = "week", school_filter: str = "", teacher_filter: str = "", status_filter: str = "", type_filter: str = ""):
     now = datetime.now()
+    csrf_html = _csrf_input_html(request)
     filter_options = _get_calendar_filter_options()
     # Build filter query conditions
     filters = []
@@ -4791,6 +4794,10 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
             for s in day_sessions:
                 status_color, status_bg = STATUS_COLORS.get(s["status"] or "已排", ("#166534", "#dcfce7"))
                 type_color, type_bg = SESSION_TYPE_COLORS.get(s["session_type"] or "課堂", ("#374151", "#f3f4f6"))
+                status_options = "".join(
+                    f'<option value="{st}"{" selected" if (s["status"] or "已排") == st else ""}>{st}</option>'
+                    for st in ["已排", "已完成", "改期", "取消", "待確認"]
+                )
                 session_rows.append(f"""
                     <tr>
                         <td style="padding:8px 6px;font-size:13px;">{html.escape((s['start_time'] or '').strip())}</td>
@@ -4798,7 +4805,16 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
                         <td style="padding:8px 6px;font-size:13px;">{html.escape((s['school_name'] or '').strip())}</td>
                         <td style="padding:8px 6px;font-size:13px;">{html.escape((s['program_name'] or '').strip())}</td>
                         <td style="padding:8px 6px;font-size:13px;">{html.escape((s['teacher_name'] or '').strip())}</td>
-                        <td style="padding:8px 6px;font-size:13px;"><span style="border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700;color:{status_color};background:{status_bg};">{html.escape(s['status'] or '已排')}</span></td>
+                        <td style="padding:8px 6px;font-size:13px;">
+                            <form method="post" action="/calendar/session/{s['id']}/status" style="display:inline;">
+                                {csrf_html}
+                                <input type="hidden" name="redirect_view" value="week">
+                                <input type="hidden" name="week_offset" value="{week_offset}">
+                                <select name="status" onchange="this.form.submit()" style="padding:2px 6px;border-radius:6px;border:1px solid {status_bg};background:{status_bg};color:{status_color};font-size:11px;font-weight:700;cursor:pointer;">
+                                    {status_options}
+                                </select>
+                            </form>
+                        </td>
                         <td style="padding:8px 6px;font-size:13px;">{html.escape((s['note'] or '').strip())}</td>
                     </tr>
                 """)
@@ -4906,6 +4922,306 @@ async def calendar_page(
             type_filter=type,
         )
     )
+
+
+@app.post("/calendar/session/{session_id}/status")
+async def calendar_session_status_update(
+    request: Request,
+    session_id: int,
+    status: str = Form(""),
+    note: str = Form(""),
+    redirect_view: str = Form("week"),
+    week_offset: int = Form(0),
+):
+    user = _current_user_record(request)
+    if not user:
+        return RedirectResponse("/", status_code=303)
+    allowed_statuses = {"已排", "已完成", "改期", "取消", "待確認"}
+    if status not in allowed_statuses:
+        return HTMLResponse("<h1>Invalid status</h1>", status_code=400)
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE school_sessions SET status = ?, note = COALESCE(?, note), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (status, note.strip() or None, session_id),
+    )
+    conn.commit()
+    conn.close()
+    _audit_action_request(
+        request, "update_session_status", target_type="school_session", target_id=str(session_id),
+        result="ok", metadata={"new_status": status}
+    )
+    return RedirectResponse(
+        f"/calendar?view={redirect_view}&week_offset={week_offset}", status_code=303
+    )
+
+
+def _get_session_conflicts(start_date: date, end_date: date):
+    """Detect sessions where same teacher has overlapping times on same date."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT
+            ss.id, ss.session_date, ss.start_time, ss.end_time,
+            ss.session_type, ss.status, ss.note,
+            sp.program_name, sp.teacher_id, sc.name AS school_name, t.name AS teacher_name
+        FROM school_sessions ss
+        JOIN school_programs sp ON sp.id = ss.program_id
+        LEFT JOIN schools sc ON sc.id = sp.school_id
+        LEFT JOIN teachers t ON t.id = sp.teacher_id
+        WHERE ss.session_date BETWEEN ? AND ?
+          AND ss.status <> '取消'
+          AND sp.is_active = 1
+          AND sp.teacher_id IS NOT NULL
+        ORDER BY sp.teacher_id, ss.session_date, ss.start_time
+        """,
+        (start_date.isoformat(), end_date.isoformat()),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    conflicts = []
+    by_teacher_date = {}
+    for r in rows:
+        key = (r["teacher_id"], r["session_date"])
+        if key not in by_teacher_date:
+            by_teacher_date[key] = []
+        by_teacher_date[key].append(r)
+    for key, sessions in by_teacher_date.items():
+        for i in range(len(sessions)):
+            for j in range(i + 1, len(sessions)):
+                s1, s2 = sessions[i], sessions[j]
+                # Simple overlap: same start_time or both have times that overlap
+                if s1["start_time"] and s2["start_time"]:
+                    t1_start = s1["start_time"][:5]
+                    t1_end = (s1["end_time"] or s1["start_time"])[:5]
+                    t2_start = s2["start_time"][:5]
+                    t2_end = (s2["end_time"] or s2["start_time"])[:5]
+                    # Overlap if start1 < end2 and start2 < end1
+                    if t1_start < t2_end and t2_start < t1_end:
+                        conflicts.append((s1, s2))
+                elif s1["start_time"] == s2["start_time"]:
+                    conflicts.append((s1, s2))
+    return conflicts
+
+
+def _render_school_monitor_page(request: Request, year: int = None, month: int = None):
+    now = datetime.now()
+    year = year or now.year
+    month = month or now.month
+    # Calculate month range
+    from calendar import monthrange
+    _, last_day = monthrange(year, month)
+    month_start = date(year, month, 1)
+    month_end = date(year, month, last_day)
+    prev_month = month - 1 if month > 1 else 12
+    prev_year = year if month > 1 else year - 1
+    next_month = month + 1 if month < 12 else 1
+    next_year = year if month < 12 else year + 1
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # School summary
+    cursor.execute(
+        """
+        SELECT
+            sc.name AS school_name,
+            COUNT(DISTINCT ss.id) AS total_sessions,
+            SUM(CASE WHEN ss.status = '已完成' THEN 1 ELSE 0 END) AS completed_sessions,
+            SUM(CASE WHEN ss.status = '取消' THEN 1 ELSE 0 END) AS cancelled_sessions,
+            SUM(CASE WHEN ss.status = '改期' THEN 1 ELSE 0 END) AS rescheduled_sessions,
+            COUNT(DISTINCT sp.teacher_id) AS teacher_count,
+            COUNT(DISTINCT sp.id) AS program_count
+        FROM schools sc
+        LEFT JOIN school_programs sp ON sp.school_id = sc.id AND sp.is_active = 1
+        LEFT JOIN school_sessions ss ON ss.program_id = sp.id
+            AND ss.session_date BETWEEN ? AND ?
+            AND ss.status <> '取消'
+        WHERE sc.is_active = 1
+        GROUP BY sc.id, sc.name
+        ORDER BY total_sessions DESC, sc.name
+        """,
+        (month_start.isoformat(), month_end.isoformat()),
+    )
+    school_rows = cursor.fetchall()
+    
+    # Teacher summary
+    cursor.execute(
+        """
+        SELECT
+            t.name AS teacher_name,
+            COUNT(DISTINCT ss.id) AS total_sessions,
+            SUM(CASE WHEN ss.status = '已完成' THEN 1 ELSE 0 END) AS completed_sessions,
+            COUNT(DISTINCT sp.school_id) AS school_count,
+            COUNT(DISTINCT sp.id) AS program_count
+        FROM teachers t
+        LEFT JOIN school_programs sp ON sp.teacher_id = t.id AND sp.is_active = 1
+        LEFT JOIN school_sessions ss ON ss.program_id = sp.id
+            AND ss.session_date BETWEEN ? AND ?
+            AND ss.status <> '取消'
+        WHERE t.is_active = 1
+        GROUP BY t.id, t.name
+        ORDER BY total_sessions DESC, t.name
+        """,
+        (month_start.isoformat(), month_end.isoformat()),
+    )
+    teacher_rows = cursor.fetchall()
+    
+    # Weekly breakdown
+    cursor.execute(
+        """
+        SELECT
+            strftime('%W', ss.session_date) AS week_num,
+            COUNT(*) AS total_sessions,
+            SUM(CASE WHEN ss.status = '已完成' THEN 1 ELSE 0 END) AS completed
+        FROM school_sessions ss
+        JOIN school_programs sp ON sp.id = ss.program_id
+        WHERE ss.session_date BETWEEN ? AND ?
+          AND ss.status <> '取消'
+          AND sp.is_active = 1
+        GROUP BY week_num
+        ORDER BY week_num
+        """,
+        (month_start.isoformat(), month_end.isoformat()),
+    )
+    weekly_rows = cursor.fetchall()
+    
+    conn.close()
+    
+    # Conflicts for this month
+    conflicts = _get_session_conflicts(month_start, month_end)
+    
+    month_label = f"{year}年{month}月"
+    
+    school_cards = []
+    for s in school_rows:
+        total = s["total_sessions"] or 0
+        completed = s["completed_sessions"] or 0
+        rate = round((completed / total * 100), 1) if total > 0 else 0
+        school_cards.append(f"""
+            <tr>
+                <td style="padding:10px 8px;font-size:13px;">{html.escape(s['school_name'] or '')}</td>
+                <td style="padding:10px 8px;font-size:13px;text-align:center;">{total}</td>
+                <td style="padding:10px 8px;font-size:13px;text-align:center;">{completed}</td>
+                <td style="padding:10px 8px;font-size:13px;text-align:center;">{rate}%</td>
+                <td style="padding:10px 8px;font-size:13px;text-align:center;">{s['teacher_count'] or 0}</td>
+                <td style="padding:10px 8px;font-size:13px;text-align:center;">{s['program_count'] or 0}</td>
+            </tr>
+        """)
+    
+    teacher_cards = []
+    for t in teacher_rows:
+        total = t["total_sessions"] or 0
+        completed = t["completed_sessions"] or 0
+        rate = round((completed / total * 100), 1) if total > 0 else 0
+        teacher_cards.append(f"""
+            <tr>
+                <td style="padding:10px 8px;font-size:13px;">{html.escape(t['teacher_name'] or '')}</td>
+                <td style="padding:10px 8px;font-size:13px;text-align:center;">{total}</td>
+                <td style="padding:10px 8px;font-size:13px;text-align:center;">{completed}</td>
+                <td style="padding:10px 8px;font-size:13px;text-align:center;">{rate}%</td>
+                <td style="padding:10px 8px;font-size:13px;text-align:center;">{t['school_count'] or 0}</td>
+                <td style="padding:10px 8px;font-size:13px;text-align:center;">{t['program_count'] or 0}</td>
+            </tr>
+        """)
+    
+    conflict_cards = []
+    for c1, c2 in conflicts[:10]:
+        conflict_cards.append(f"""
+            <div style="padding:10px;background:#fee2e2;border:1px solid #fecaca;border-radius:8px;margin-bottom:6px;font-size:12px;">
+                <strong>⚠️ 時間衝突</strong> · {html.escape(c1['teacher_name'] or '')}<br>
+                {c1['session_date']} {html.escape(c1['start_time'] or '')} {html.escape(c1['school_name'] or '')} {html.escape(c1['program_name'] or '')}<br>
+                vs {html.escape(c2['start_time'] or '')} {html.escape(c2['school_name'] or '')} {html.escape(c2['program_name'] or '')}
+            </div>
+        """)
+    
+    return f"""
+    <html lang="zh-HK">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{APP_NAME} - 學校課堂月報</title>
+        <style>
+            :root {{ --bg:#f5f1e8; --paper:#ffffff; --ink:#101114; --muted:#5f646d; --line:rgba(16,17,20,.10); --accent:#b89d5d; --accent-soft:#f4ead2; }}
+            * {{ box-sizing:border-box; }}
+            body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif; background:var(--bg); color:var(--ink); }}
+            .container {{ max-width:1200px; margin:0 auto; padding:20px; }}
+            .toolbar {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }}
+            .toolbar a {{ text-decoration:none; color:#111; background:#fff; border:1px solid var(--line); padding:8px 12px; border-radius:10px; font-size:13px; }}
+            .card {{ background:#fff; border:1px solid var(--line); border-radius:16px; padding:20px; margin-bottom:16px; }}
+            .card h3 {{ margin:0 0 14px; font-size:16px; }}
+            table {{ width:100%; border-collapse:collapse; font-size:13px; }}
+            th {{ text-align:left; padding:10px 8px; background:#f9fafb; border-bottom:1px solid #e5e7eb; font-weight:600; }}
+            td {{ border-bottom:1px solid #f3f4f6; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="toolbar">
+                <a href="/dashboard">← 返回 Dashboard</a>
+                <a href="/school-monitor?year={prev_year}&month={prev_month}">← 上月</a>
+                <strong>{month_label}</strong>
+                <a href="/school-monitor?year={next_year}&month={next_month}">下月 →</a>
+                <a href="/calendar">校曆</a>
+            </div>
+            
+            <div class="card">
+                <h3>📊 學校課堂統計</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>學校</th>
+                            <th style="text-align:center">總堂數</th>
+                            <th style="text-align:center">已完成</th>
+                            <th style="text-align:center">完成率</th>
+                            <th style="text-align:center">導師數</th>
+                            <th style="text-align:center">班別數</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {''.join(school_cards) or '<tr><td colspan="6" style="padding:14px;color:#9ca3af;">沒有資料</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="card">
+                <h3>👨‍🏫 導師出勤統計</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>導師</th>
+                            <th style="text-align:center">總堂數</th>
+                            <th style="text-align:center">已完成</th>
+                            <th style="text-align:center">完成率</th>
+                            <th style="text-align:center">學校數</th>
+                            <th style="text-align:center">班別數</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {''.join(teacher_cards) or '<tr><td colspan="6" style="padding:14px;color:#9ca3af;">沒有資料</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="card">
+                <h3>⚠️ 時間衝突警示 ({len(conflicts)} 宗)</h3>
+                {''.join(conflict_cards) or '<p style="color:#9ca3af;font-size:13px;">本月沒有時間衝突。</p>'}
+                {f'<p style="color:#9ca3af;font-size:12px;margin-top:8px;">還有 {len(conflicts) - 10} 宗衝突未顯示</p>' if len(conflicts) > 10 else ''}
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+
+@app.get("/school-monitor", response_class=HTMLResponse)
+async def school_monitor_page(request: Request, year: int = None, month: int = None):
+    if not _current_user_record(request):
+        return RedirectResponse("/", status_code=303)
+    return HTMLResponse(_render_school_monitor_page(request, year=year, month=month))
 
 
 def _attendance_status_badge(status: str):
