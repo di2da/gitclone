@@ -4659,7 +4659,7 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
                 session_dots = []
                 for s in day_sessions[:5]:
                     typ_color = SESSION_TYPE_COLORS.get(s["session_type"] or "課堂", ("#374151", "#f3f4f6"))[0]
-                    session_dots.append(f'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:{typ_color};margin-right:2px;"></span>')
+                    session_dots.append(f'<a href="/calendar/session/{s["id"]}" style="text-decoration:none;"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:{typ_color};margin-right:2px;cursor:pointer;"></span></a>')
                 if len(day_sessions) > 5:
                     session_dots.append(f'<span style="font-size:10px;color:#6b7280;">+{len(day_sessions)-5}</span>')
                 
@@ -4799,7 +4799,7 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
                     for st in ["已排", "已完成", "改期", "取消", "待確認"]
                 )
                 session_rows.append(f"""
-                    <tr>
+                    <tr onclick="window.location.href='/calendar/session/{s['id']}'" style="cursor:pointer;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background=''">
                         <td style="padding:8px 6px;font-size:13px;">{html.escape((s['start_time'] or '').strip())}</td>
                         <td style="padding:8px 6px;font-size:13px;"><span style="border-radius:999px;padding:2px 6px;font-size:10px;font-weight:700;color:{type_color};background:{type_bg};">{html.escape(s['session_type'] or '課堂')}</span></td>
                         <td style="padding:8px 6px;font-size:13px;">{html.escape((s['school_name'] or '').strip())}</td>
@@ -5222,6 +5222,177 @@ async def school_monitor_page(request: Request, year: int = None, month: int = N
     if not _current_user_record(request):
         return RedirectResponse("/", status_code=303)
     return HTMLResponse(_render_school_monitor_page(request, year=year, month=month))
+
+
+def _render_session_detail_page(request: Request, session_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT
+            ss.id, ss.session_date, ss.start_time, ss.end_time,
+            ss.session_type, ss.status, ss.note, ss.created_at, ss.updated_at,
+            sp.program_name, sp.weekday, sp.default_start_time, sp.default_end_time,
+            sp.teacher_id, sp.teacher_name_snapshot,
+            sc.name AS school_name, sc.district, sc.contact_person, sc.contact_phone,
+            t.name AS teacher_name, t.phone AS teacher_phone, t.email AS teacher_email
+        FROM school_sessions ss
+        JOIN school_programs sp ON sp.id = ss.program_id
+        LEFT JOIN schools sc ON sc.id = sp.school_id
+        LEFT JOIN teachers t ON t.id = sp.teacher_id
+        WHERE ss.id = ?
+        """,
+        (session_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return "<h1>課堂不存在</h1><a href='/calendar'>← 返回校曆</a>"
+
+    status_color, status_bg = STATUS_COLORS.get(row["status"] or "已排", ("#166534", "#dcfce7"))
+    type_color, type_bg = SESSION_TYPE_COLORS.get(row["session_type"] or "課堂", ("#374151", "#f3f4f6"))
+
+    return f"""
+    <html lang="zh-HK">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{APP_NAME} - 課堂詳情</title>
+        <style>
+            :root {{ --bg:#f5f1e8; --paper:#ffffff; --ink:#101114; --muted:#5f646d; --line:rgba(16,17,20,.10); --accent:#b89d5d; --accent-soft:#f4ead2; }}
+            * {{ box-sizing:border-box; }}
+            body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif; background:var(--bg); color:var(--ink); }}
+            .container {{ max-width:720px; margin:0 auto; padding:20px; }}
+            .toolbar {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }}
+            .toolbar a {{ text-decoration:none; color:#111; background:#fff; border:1px solid var(--line); padding:8px 12px; border-radius:10px; font-size:13px; }}
+            .card {{ background:#fff; border:1px solid var(--line); border-radius:16px; padding:20px; margin-bottom:16px; }}
+            .card h3 {{ margin:0 0 14px; font-size:16px; }}
+            .row {{ display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #f3f4f6; }}
+            .row:last-child {{ border-bottom:none; }}
+            .label {{ color:#6b7280; font-size:13px; }}
+            .value {{ font-size:14px; font-weight:500; }}
+            .badge {{ border-radius:999px; padding:3px 10px; font-size:12px; font-weight:700; display:inline-block; }}
+            textarea {{ width:100%; padding:10px; border:1px solid var(--line); border-radius:10px; font-size:14px; min-height:80px; resize:vertical; }}
+            input[type="text"], input[type="time"] {{ padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; }}
+            button {{ padding:10px 18px; border:none; border-radius:10px; background:#111; color:#fff; font-size:14px; cursor:pointer; }}
+            button.secondary {{ background:#fff; color:#111; border:1px solid var(--line); }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="toolbar">
+                <a href="/calendar">← 返回校曆</a>
+                <a href="/school-monitor">學校月報</a>
+            </div>
+
+            <div class="card">
+                <h3>📋 課堂資料 #{row['id']}</h3>
+                <div class="row">
+                    <span class="label">活動類型</span>
+                    <span class="badge" style="color:{type_color};background:{type_bg};">{html.escape(row['session_type'] or '課堂')}</span>
+                </div>
+                <div class="row">
+                    <span class="label">狀態</span>
+                    <span class="badge" style="color:{status_color};background:{status_bg};">{html.escape(row['status'] or '已排')}</span>
+                </div>
+                <div class="row">
+                    <span class="label">日期</span>
+                    <span class="value">{html.escape(row['session_date'] or '')}</span>
+                </div>
+                <div class="row">
+                    <span class="label">時間</span>
+                    <span class="value">{html.escape((row['start_time'] or '').strip())} – {html.escape((row['end_time'] or '').strip())}</span>
+                </div>
+                <div class="row">
+                    <span class="label">學校</span>
+                    <span class="value">{html.escape((row['school_name'] or '').strip())}</span>
+                </div>
+                <div class="row">
+                    <span class="label">地區</span>
+                    <span class="value">{html.escape((row['district'] or '').strip())}</span>
+                </div>
+                <div class="row">
+                    <span class="label">班別</span>
+                    <span class="value">{html.escape((row['program_name'] or '').strip())}</span>
+                </div>
+                <div class="row">
+                    <span class="label">導師</span>
+                    <span class="value">{html.escape((row['teacher_name'] or row['teacher_name_snapshot'] or '').strip())}</span>
+                </div>
+                <div class="row">
+                    <span class="label">學校聯絡人</span>
+                    <span class="value">{html.escape((row['contact_person'] or '').strip())} {html.escape((row['contact_phone'] or '').strip())}</span>
+                </div>
+                <div class="row">
+                    <span class="label">建立時間</span>
+                    <span class="value">{html.escape(row['created_at'] or '')}</span>
+                </div>
+                <div class="row">
+                    <span class="label">最後更新</span>
+                    <span class="value">{html.escape(row['updated_at'] or '')}</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>📝 編輯課堂</h3>
+                <form method="post" action="/calendar/session/{row['id']}/update">
+                    {_csrf_input_html(request)}
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:13px;color:#6b7280;margin-bottom:4px;">開始時間</label>
+                        <input type="time" name="start_time" value="{(row['start_time'] or '').strip()[:5]}">
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:13px;color:#6b7280;margin-bottom:4px;">結束時間</label>
+                        <input type="time" name="end_time" value="{(row['end_time'] or '').strip()[:5]}">
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:13px;color:#6b7280;margin-bottom:4px;">備註</label>
+                        <textarea name="note" placeholder="輸入備註...">{html.escape(row['note'] or '')}</textarea>
+                    </div>
+                    <div style="display:flex;gap:10px;">
+                        <button type="submit">儲存變更</button>
+                        <a href="/calendar" class="secondary" style="text-decoration:none;padding:10px 18px;border-radius:10px;background:#fff;color:#111;border:1px solid var(--line);font-size:14px;display:inline-block;">取消</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+
+@app.get("/calendar/session/{session_id}", response_class=HTMLResponse)
+async def session_detail_page(request: Request, session_id: int):
+    if not _current_user_record(request):
+        return RedirectResponse("/", status_code=303)
+    return HTMLResponse(_render_session_detail_page(request, session_id))
+
+
+@app.post("/calendar/session/{session_id}/update")
+async def session_detail_update(
+    request: Request,
+    session_id: int,
+    start_time: str = Form(""),
+    end_time: str = Form(""),
+    note: str = Form(""),
+):
+    user = _current_user_record(request)
+    if not user:
+        return RedirectResponse("/", status_code=303)
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE school_sessions SET start_time = ?, end_time = ?, note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (start_time.strip() or None, end_time.strip() or None, note.strip() or None, session_id),
+    )
+    conn.commit()
+    conn.close()
+    _audit_action_request(
+        request, "update_session_detail", target_type="school_session", target_id=str(session_id),
+        result="ok", metadata={"fields": ["start_time", "end_time", "note"]}
+    )
+    return RedirectResponse(f"/calendar/session/{session_id}", status_code=303)
 
 
 def _attendance_status_badge(status: str):
