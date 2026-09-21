@@ -4568,6 +4568,28 @@ STATUS_COLORS = {
 }
 
 
+def _school_short_name(full_name: str) -> str:
+    """Extract short name from full school name.
+    E.g. '佛教林炳炎紀念學校' -> '林炳炎', '中華基督教會蒙黃花沃紀念小學' -> '蒙黃花沃'
+    """
+    if not full_name:
+        return ""
+    name = full_name.strip()
+    # Remove common prefixes
+    prefixes = ["佛教", "道教", "孔教", "基督教", "天主教", "伊斯蘭", "中華基督教會", "香港", "東華", "保良", "仁濟", "博愛", "嗇色", "惠僑", "潮陽", "聖公會", "路德會", "信義會", "浸信會", "宣道會", "禮賢會", "靈糧", "真光", "協恩", "拔萃", "聖保羅", "聖若瑟", "瑪利諾", "嘉諾撒"]
+    for prefix in prefixes:
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+            break
+    # Remove common suffixes
+    suffixes = ["紀念學校", "紀念中學", "紀念小學", "學校", "小學", "中學", "幼稚園", "幼兒園", "中心", "會所", "禮堂"]
+    for suffix in suffixes:
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+            break
+    return name.strip() or full_name.strip()[:4]
+
+
 def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: int = 0, view: str = "week", school_filter: str = "", teacher_filter: str = "", status_filter: str = "", type_filter: str = ""):
     now = datetime.now()
     csrf_html = _csrf_input_html(request)
@@ -4657,11 +4679,12 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
                 is_current_month = (current_date.month == month)
                 day_sessions = sessions_by_date.get(current_date.isoformat(), [])
                 session_dots = []
-                for s in day_sessions[:5]:
+                for s in day_sessions[:3]:
                     typ_color = SESSION_TYPE_COLORS.get(s["session_type"] or "課堂", ("#374151", "#f3f4f6"))[0]
-                    session_dots.append(f'<a href="/calendar/session/{s["id"]}" style="text-decoration:none;"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:{typ_color};margin-right:2px;cursor:pointer;"></span></a>')
-                if len(day_sessions) > 5:
-                    session_dots.append(f'<span style="font-size:10px;color:#6b7280;">+{len(day_sessions)-5}</span>')
+                    short_name = _school_short_name(s["school_name"] or "")
+                    session_dots.append(f'<a href="/calendar/session/{s["id"]}" style="text-decoration:none;"><span style="display:inline-block;font-size:9px;padding:1px 4px;border-radius:3px;background:{typ_color};color:#fff;margin-right:2px;margin-bottom:2px;cursor:pointer;white-space:nowrap;">{html.escape(short_name)}</span></a>')
+                if len(day_sessions) > 3:
+                    session_dots.append(f'<span style="font-size:10px;color:#6b7280;">+{len(day_sessions)-3}</span>')
                 
                 cell_content = f"""
                     <div style="font-size:11px;color:{'#111' if is_current_month else '#9ca3af'};margin-bottom:2px;">{current_date.day}</div>
@@ -5235,7 +5258,7 @@ def _render_session_detail_page(request: Request, session_id: int):
             ss.session_type, ss.status, ss.note, ss.created_at, ss.updated_at,
             sp.program_name, sp.weekday, sp.default_start_time, sp.default_end_time,
             sp.teacher_id, sp.teacher_name_snapshot,
-            sc.name AS school_name, sc.district, sc.contact_person, sc.contact_phone,
+            sc.name AS school_name, sc.contact_person, sc.contact_phone,
             t.name AS teacher_name, t.phone AS teacher_phone, t.email AS teacher_email
         FROM school_sessions ss
         JOIN school_programs sp ON sp.id = ss.program_id
@@ -5308,10 +5331,7 @@ def _render_session_detail_page(request: Request, session_id: int):
                     <span class="label">學校</span>
                     <span class="value">{html.escape((row['school_name'] or '').strip())}</span>
                 </div>
-                <div class="row">
-                    <span class="label">地區</span>
-                    <span class="value">{html.escape((row['district'] or '').strip())}</span>
-                </div>
+
                 <div class="row">
                     <span class="label">班別</span>
                     <span class="value">{html.escape((row['program_name'] or '').strip())}</span>
