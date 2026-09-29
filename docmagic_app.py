@@ -4322,7 +4322,7 @@ def _render_dashboard_page(request: Request):
                     <p>先揀你要處理嘅模組，再進入對應頁面。</p>
                     <div class="links">
                         <a class="link" href="/class-control"><strong>課堂控制台</strong><span>今日／本週安排、每月核堂、導師代課、補堂及加堂。</span></a>
-                        <a class="link" href="/salary/teachers"><strong>導師列表</strong><span>查看各導師班數、狀態與薪酬詳情。</span></a>
+                        {f'<a class="link" href="/salary/teachers"><strong>導師列表</strong><span>查看各導師班數、狀態與薪酬詳情。</span></a>' if user and _normalize_role(user[3]) == "admin" else ''}
                         <a class="link" href="/salary/classes"><strong>班別列表</strong><span>整理學校、星期、導師同時薪資料。</span></a>
                         <a class="link" href="/attendance"><strong>學生點名系統</strong><span>記錄各地區課堂出席、缺席同原因。</span></a>
                         <a class="link" href="/salary"><strong>薪酬管理</strong><span>查看薪酬總覽、匯入資料與計算記錄。</span></a>
@@ -5718,13 +5718,15 @@ def _render_class_control_teachers(request: Request, target_date: date, start_ti
         </div>""")
 
     teacher_options = "".join(f'<option value="{t["id"]}">{html.escape(t["name"])}</option>' for t in teachers)
+    current_user = _current_user_record(request)
+    full_teacher_data_link = '<a class="cc-btn" href="/salary/teachers">完整導師資料</a>' if current_user and _normalize_role(current_user[3]) == "admin" else ""
     unresolved_rows = "".join(f"""
         <tr><td>{html.escape(row['teacher_name_snapshot'] or '未填')}</td><td>{html.escape(row['school_name'] or '-')}<div class="cc-muted">{html.escape(row['program_name'] or '-')}</div></td><td>{html.escape(row['weekday'] or '')} {html.escape((row['default_start_time'] or '')[:5])}</td><td>
         <form method="post" action="/class-control/program/{row['id']}/teacher" class="cc-form-row">{_csrf_input_html(request)}<select name="teacher_id" required><option value="">選擇主要導師</option>{teacher_options}</select><button class="cc-btn primary" type="submit">配對</button></form></td></tr>
     """ for row in unresolved)
 
     body = f"""
-    <div class="cc-top"><div><h1>導師安排與代課檢視</h1><div class="cc-muted">只計2026年8月起仍有課堂的班別；只會顯示「系統內沒有課堂衝突」，不會武斷判定導師一定得閒。</div></div><div class="cc-actions"><a class="cc-btn" href="/class-control">← 課堂控制台</a><a class="cc-btn" href="/salary/teachers">完整導師資料</a></div></div>
+    <div class="cc-top"><div><h1>導師安排與代課檢視</h1><div class="cc-muted">只計2026年8月起仍有課堂的班別；只會顯示「系統內沒有課堂衝突」，不會武斷判定導師一定得閒。</div></div><div class="cc-actions"><a class="cc-btn" href="/class-control">← 課堂控制台</a>{full_teacher_data_link}</div></div>
     {f'<div class="cc-alert">仍有 {len(unresolved)} 個班別未配對正式導師。配對後，代課搜尋先會可靠。</div>' if unresolved else '<div class="cc-ok">所有班別已配對主要導師。</div>'}
     <div class="cc-card"><h2>尋找代課候選</h2><form method="get" action="/class-control/teachers" class="cc-form-row"><div class="cc-field"><label>日期</label><input type="date" name="date" value="{target_date.isoformat()}" required></div><div class="cc-field"><label>開始</label><input type="time" name="start_time" value="{html.escape(start_time, quote=True)}"></div><div class="cc-field"><label>結束</label><input type="time" name="end_time" value="{html.escape(end_time, quote=True)}"></div><button class="cc-btn primary" type="submit">搜尋沒有撞堂導師</button></form></div>
     <div class="cc-grid"><section><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:12px;">{''.join(teacher_cards)}</div></section><aside>
@@ -13145,8 +13147,11 @@ def _salary_amount_for_teacher(cursor, teacher_id: int):
     """, (teacher_id,))
     return cursor.fetchone()[0] or 0
 
-def render_salary_page(title, body):
-    return HTMLResponse(f"{SALARY_HEADER}<div class='container'><h2>{title}</h2><div class='card'>{body}</div></div>{SALARY_FOOTER}")
+def render_salary_page(title, body, user=None):
+    header = SALARY_HEADER
+    if not user or _normalize_role(user[3]) != "admin":
+        header = header.replace('<a href="/salary/teachers">👨‍🏫 導師</a>', '')
+    return HTMLResponse(f"{header}<div class='container'><h2>{title}</h2><div class='card'>{body}</div></div>{SALARY_FOOTER}")
 
 
 def _csv_text_from_upload(upload: UploadFile):
@@ -14388,7 +14393,7 @@ async def salary_dashboard(user: tuple = Depends(require_roles("admin", "finance
     <h3>👨‍🏫 導師本月薪酬一覽</h3>
     <table><thead><tr><th>導師</th><th>班數</th><th>本月薪酬 (HKD)</th></tr></thead><tbody>{rows_html}</tbody></table>
     """
-    return render_salary_page("📊 薪酬概覽", body)
+    return render_salary_page("📊 薪酬概覽", body, user=user)
 
 @app.get("/salary/import")
 async def salary_import_page(request: Request, user: tuple = Depends(require_roles("admin", "finance"))):
@@ -14525,7 +14530,7 @@ async def salary_import_page(request: Request, user: tuple = Depends(require_rol
         t.appendChild(tr);
     }
     </script>"""
-    return render_salary_page("📥 匯入教務數據", body)
+    return render_salary_page("📥 匯入教務數據", body, user=user)
 
 
 @app.get("/salary/payroll")
@@ -14618,7 +14623,7 @@ async def salary_payroll_page(
         </div>
     </form>
     """
-    return render_salary_page(f"🧾 {month_label} 導師薪金", body)
+    return render_salary_page(f"🧾 {month_label} 導師薪金", body, user=user)
 
 
 @app.post("/salary/payroll/save")
@@ -14788,7 +14793,7 @@ async def salary_import_school_calendar_preview(
         max_source_row=75,
     )
     body = _school_calendar_preview_html(preview, sheet_url=sheet_url, school_year=school_year)
-    return render_salary_page("📅 2026–27 學校課堂日期預覽", body)
+    return render_salary_page("📅 2026–27 學校課堂日期預覽", body, user=user)
 
 
 @app.post("/salary/import/school-calendar-confirm")
@@ -14847,7 +14852,7 @@ async def salary_import_school_calendar_confirm(
             </div>
         </div>
     """
-    return render_salary_page("📅 學校課堂日期匯入結果", body)
+    return render_salary_page("📅 學校課堂日期匯入結果", body, user=user)
 
 
 @app.post("/salary/import/schools-csv")
@@ -14958,7 +14963,7 @@ async def salary_teachers(
     q: str = Query(default=""),
     status: str = Query(default="active"),
     class_state: str = Query(default="all"),
-    user: tuple = Depends(require_roles("admin", "finance")),
+    user: tuple = Depends(require_roles("admin")),
 ):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -15194,16 +15199,16 @@ async def salary_teachers(
     cards_html += "</div>"
 
     body_html += cards_html
-    return render_salary_page("👨‍🏫 導師列表", body_html)
+    return render_salary_page("👨‍🏫 導師列表", body_html, user=user)
 
 
 @app.get("/salary/teachers/new")
-async def salary_teacher_new(request: Request, user: tuple = Depends(require_roles("admin", "finance"))):
+async def salary_teacher_new(request: Request, user: tuple = Depends(require_roles("admin"))):
     body = """
     <div class="alert-info">新增導師後，可以直接喺導師列表再補銀行資料同 FPS。</div>
     """
     body += _teacher_form_html(request)
-    return render_salary_page("➕ 新增導師", body)
+    return render_salary_page("➕ 新增導師", body, user=user)
 
 
 @app.post("/salary/teachers/new")
@@ -15231,7 +15236,7 @@ async def salary_teacher_new_save(
     instagram: str = Form(""),
     remarks: str = Form(""),
     is_active: Optional[str] = Form(None),
-    user: tuple = Depends(require_roles("admin", "finance")),
+    user: tuple = Depends(require_roles("admin")),
 ):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -15278,7 +15283,7 @@ async def salary_teacher_new_save(
 
 
 @app.get("/salary/teacher/{tid}/edit")
-async def salary_teacher_edit(tid: int, request: Request, user: tuple = Depends(require_roles("admin", "finance"))):
+async def salary_teacher_edit(tid: int, request: Request, user: tuple = Depends(require_roles("admin"))):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
@@ -15297,7 +15302,7 @@ async def salary_teacher_edit(tid: int, request: Request, user: tuple = Depends(
     <div class="alert-info">你可以隨時手動修改導師銀行資料，之後薪金頁會即刻反映。</div>
     """
     body += _teacher_form_html(request, teacher)
-    return render_salary_page("✏️ 編輯導師", body)
+    return render_salary_page("✏️ 編輯導師", body, user=user)
 
 
 @app.post("/salary/teacher/{tid}/edit")
@@ -15326,7 +15331,7 @@ async def salary_teacher_edit_save(
     instagram: str = Form(""),
     remarks: str = Form(""),
     is_active: Optional[str] = Form(None),
-    user: tuple = Depends(require_roles("admin", "finance")),
+    user: tuple = Depends(require_roles("admin")),
 ):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -15540,14 +15545,14 @@ async def salary_schools(
         body += "</div>"
     else:
         body += "<div class='card'><p class='muted'>暫時未有符合條件的學校資料。</p></div>"
-    return render_salary_page(f"🏫 學校合作管理中心 - {school_year or '全部學年'}", body)
+    return render_salary_page(f"🏫 學校合作管理中心 - {school_year or '全部學年'}", body, user=user)
 
 
 @app.get("/salary/schools/new")
 async def salary_school_new(request: Request, user: tuple = Depends(require_roles("admin", "finance"))):
     body = "<div class='alert-info'>新增學校主檔，之後可在詳情頁補聯絡人、跟進紀錄同財務資料。</div>"
     body += _school_form_html(request)
-    return render_salary_page("➕ 新增學校資料", body)
+    return render_salary_page("➕ 新增學校資料", body, user=user)
 
 
 @app.post("/salary/schools/new/save")
@@ -15648,7 +15653,7 @@ async def salary_school_edit(sid: int, request: Request, user: tuple = Depends(r
         return HTMLResponse("學校資料不存在", status_code=404)
     body = "<div class='alert-info'>你可以更新合作狀態、風險標籤同下一步跟進，不會刪除舊資料。</div>"
     body += _school_form_html(request, detail["school"])
-    return render_salary_page("✏️ 編輯學校資料", body)
+    return render_salary_page("✏️ 編輯學校資料", body, user=user)
 
 
 @app.post("/salary/schools/{sid}/save")
@@ -16032,7 +16037,7 @@ async def salary_school_detail(sid: int, request: Request, user: tuple = Depends
     }})();
     </script>
     """
-    return render_salary_page(f"🏫 {name} · 學校詳情", body)
+    return render_salary_page(f"🏫 {name} · 學校詳情", body, user=user)
 
 
 @app.post("/salary/schools/{sid}/contacts/new")
@@ -16115,7 +16120,7 @@ async def salary_school_followup_new(
     return RedirectResponse(f"/salary/schools/{sid}", status_code=303)
 
 @app.get("/salary/teacher/{tid}")
-async def salary_teacher_detail(tid: int, request: Request, user: tuple = Depends(require_roles("admin", "finance"))):
+async def salary_teacher_detail(tid: int, request: Request, user: tuple = Depends(require_roles("admin"))):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
@@ -16254,7 +16259,7 @@ async def salary_teacher_detail(tid: int, request: Request, user: tuple = Depend
             <button type='submit' class='btn btn-primary btn-small'>📊 計算 / 儲存月份薪酬</button>
         </div>
     </form>"""
-    return render_salary_page(f"👤 {name} 詳細", body_html)
+    return render_salary_page(f"👤 {name} 詳細", body_html, user=user)
 
 @app.get("/salary/records")
 async def salary_records(
@@ -16390,7 +16395,7 @@ async def salary_records(
         html += "</tbody></table>"
     else:
         html += "<p style='color:#666;padding:20px;text-align:center;'>尚未有薪酬記錄，請先從 Dashboard 點選導師計算或匯入每月薪金 CSV。</p>"
-    return render_salary_page("📋 薪酬記錄", html)
+    return render_salary_page("📋 薪酬記錄", html, user=user)
 
 
 @app.post("/salary/records/manual-save")
@@ -16503,7 +16508,7 @@ async def salary_calculate(
     <tfoot><tr style="font-weight:700;background:{BRAND_LIGHT};"><td colspan="5">總計</td><td>${total_amount:,.0f}</td></tr></tfoot></table>
     <br><a href="/salary/teacher/{tid}" class="btn btn-outline btn-small">← 返回</a>
     """
-    return render_salary_page(f"📊 {t[1]} {month_label} 薪酬計算", html)
+    return render_salary_page(f"📊 {t[1]} {month_label} 薪酬計算", html, user=user)
 
 @app.get("/salary/report")
 async def salary_report(user: tuple = Depends(require_roles("admin", "finance"))):
@@ -16581,7 +16586,7 @@ async def salary_report(user: tuple = Depends(require_roles("admin", "finance"))
         </div>"""
 
     conn.close()
-    return render_salary_page("📄 薪酬總報表", report_html)
+    return render_salary_page("📄 薪酬總報表", report_html, user=user)
 
 @app.get("/salary/classes")
 async def salary_classes(user: tuple = Depends(require_roles("admin", "finance"))):
@@ -16604,7 +16609,7 @@ async def salary_classes(user: tuple = Depends(require_roles("admin", "finance")
         for r in sorted(rows, key=lambda x: (days.index(x[2]) if x[2] in days else 99, x[1])):
             html += f"<tr><td>{r[0] or '-'}</td><td>{r[1]}</td><td><span class='badge badge-blue'>{r[2]} {r[3] or ''}</span></td><td><a href='/salary/teacher/{r[4]}' class='btn btn-outline btn-small'>{r[5]}</a></td><td>${r[6]:,.0f}</td><td>{r[7]}</td><td>{r[8]}</td><td><strong>{r[9]}</strong></td></tr>"
         html += "</tbody></table>"
-    return render_salary_page("🏫 班別列表", html)
+    return render_salary_page("🏫 班別列表", html, user=user)
 
 
 @app.post("/api/db/query")
