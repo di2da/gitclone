@@ -190,6 +190,11 @@ PRODUCTION_ALLOWED_ORIGINS = {
 }
 SERVICE_AUTH_USER = os.environ.get("DOCMAGIC_DB_SERVICE_USER", "").strip()
 SERVICE_AUTH_PASSWORD = os.environ.get("DOCMAGIC_DB_SERVICE_PASSWORD", "").strip()
+SESSION_SIGNING_SECRET = (
+    os.environ.get("DOCMAGIC_SESSION_SECRET", "").strip()
+    or SERVICE_AUTH_PASSWORD
+    or hashlib.sha256(f"docmagic-session:{ADMIN_PASS}".encode("utf-8")).hexdigest()
+)
 ALLOWED_ORIGINS_ENV = os.environ.get("DOCMAGIC_ALLOWED_ORIGINS", "").strip()
 DOCMAGIC_ENV = os.environ.get("DOCMAGIC_ENV", "").strip().lower()
 DOCMAGIC_SECURE_COOKIE = os.environ.get("DOCMAGIC_SECURE_COOKIE", "").strip().lower()
@@ -427,7 +432,7 @@ def _audit_action_request(request: Request, action: str, target_type: str = "", 
 
 
 def _session_lookup_by_token(token: str):
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = _bootstrap_sqlite_connect(DB_PATH, timeout=30)
     cursor = conn.cursor()
     cursor.execute(
         """
@@ -440,7 +445,7 @@ def _session_lookup_by_token(token: str):
     )
     row = cursor.fetchone()
     conn.close()
-    return row
+    return row or _signed_session_row(token)
 
 
 def _now():
@@ -489,6 +494,63 @@ def _parse_dt(value):
         return datetime.strptime(str(value), "%Y-%m-%d %H:%M:%S")
     except Exception:
         return None
+
+
+def _base64url_encode(value: bytes):
+    return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
+
+
+def _base64url_decode(value: str):
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
+
+
+def _create_signed_session_token(username: str, csrf_token: str, expires_at: str):
+    payload = json.dumps(
+        {"v": 1, "u": username, "c": csrf_token, "e": expires_at},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    encoded = _base64url_encode(payload)
+    signature = hmac.new(SESSION_SIGNING_SECRET.encode("utf-8"), encoded.encode("ascii"), hashlib.sha256).digest()
+    return f"v1.{encoded}.{_base64url_encode(signature)}"
+
+
+def _decode_signed_session_token(token: str):
+    try:
+        if not token or len(token) > 4096:
+            return None
+        version, encoded, supplied_signature = token.split(".", 2)
+        if version != "v1":
+            return None
+        expected_signature = _base64url_encode(
+            hmac.new(SESSION_SIGNING_SECRET.encode("utf-8"), encoded.encode("ascii"), hashlib.sha256).digest()
+        )
+        if not secrets.compare_digest(supplied_signature, expected_signature):
+            return None
+        payload = json.loads(_base64url_decode(encoded).decode("utf-8"))
+        if payload.get("v") != 1:
+            return None
+        username = str(payload.get("u") or "").strip()
+        csrf_token = str(payload.get("c") or "").strip()
+        expires_at = str(payload.get("e") or "").strip()
+        expiry = _parse_dt(expires_at)
+        if not username or not csrf_token or not expiry or expiry < _now():
+            return None
+        return {"username": username, "csrf_token": csrf_token, "expires_at": expires_at}
+    except Exception:
+        return None
+
+
+def _signed_session_row(token: str):
+    payload = _decode_signed_session_token(token)
+    if not payload:
+        return None
+    user = _get_user_by_username(payload["username"])
+    if not user or user[5] != 1:
+        return None
+    return (user[0], user[1], user[3] or user[1], user[4], user[5], payload["expires_at"], payload["csrf_token"])
 
 
 def _normalize_role(role: str):
@@ -1648,7 +1710,7 @@ def _get_user_by_token(token: str):
     )
     row = cursor.fetchone()
     conn.close()
-    return row
+    return row or _signed_session_row(token)
 
 
 def _write_audit_log(
@@ -1835,10 +1897,12 @@ def authenticate(request: Request, credentials: HTTPBasicCredentials = Depends(s
                         "UPDATE app_users SET failed_attempts=0, locked_until=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?",
                         (row[0],),
                     )
-                token = secrets.token_hex(24)
+                csrf_token = secrets.token_urlsafe(48)
+                expires_at = _session_expires_at()
+                token = _create_signed_session_token(row[1], csrf_token, expires_at)
                 cursor.execute(
-                    "INSERT OR REPLACE INTO app_sessions (token, username, display_name, expires_at, last_seen) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
-                    (token, row[1], row[3] or row[1], _session_expires_at()),
+                    "INSERT OR REPLACE INTO app_sessions (token, username, display_name, csrf_token, expires_at, last_seen) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                    (token, row[1], row[3] or row[1], csrf_token, expires_at),
                 )
                 conn.commit()
                 conn.close()
@@ -4461,11 +4525,12 @@ async def login_submit(request: Request, username: str = Form(...), password: st
                 "UPDATE app_users SET failed_attempts=0, locked_until=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?",
                 (row[0],),
             )
-        token = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(48)
+        expires_at = _session_expires_at()
+        token = _create_signed_session_token(row[1], csrf_token, expires_at)
         cursor.execute(
             "INSERT OR REPLACE INTO app_sessions (token, username, display_name, csrf_token, expires_at, last_seen) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
-            (token, row[1], row[3] or row[1], csrf_token, _session_expires_at()),
+            (token, row[1], row[3] or row[1], csrf_token, expires_at),
         )
         conn.commit()
         conn.close()
