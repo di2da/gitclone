@@ -464,6 +464,17 @@ def _now():
     return datetime.now().replace(microsecond=0)
 
 
+HK_TIMEZONE = timezone(timedelta(hours=8))
+
+
+def _hk_now():
+    return datetime.now(HK_TIMEZONE)
+
+
+def _hk_today():
+    return _hk_now().date()
+
+
 def _fmt_dt(value: datetime):
     return value.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -3964,7 +3975,7 @@ def _render_login_page(error: str = ""):
 
 
 def _render_dashboard_page(request: Request):
-    now = datetime.now()
+    now = _hk_now()
     today = now.strftime("%Y年%m月%d日")
     display_name = _current_display_name(request)
     user = _current_user_record(request)
@@ -4067,8 +4078,7 @@ def _render_dashboard_page(request: Request):
         if not text:
             return False
         compact = text.replace("星期", "").replace("週", "").replace("周", "")
-        # Fix: Use datetime.now() instead of the 'today' string
-        aliases = weekday_aliases.get(datetime.now().weekday(), set())
+        aliases = weekday_aliases.get(_hk_now().weekday(), set())
         return text in aliases or compact in aliases
 
     today_lesson_rows = [row for row in lesson_rows if _lesson_is_today(row[3])]
@@ -4091,7 +4101,7 @@ def _render_dashboard_page(request: Request):
     else:
         today_class_body = "今日暫時未有已登記課堂。"
 
-    now_date = datetime.now().date()
+    now_date = _hk_today()
     monday = now_date - timedelta(days=now_date.weekday())
     sunday = monday + timedelta(days=6)
     weekly_rows = _get_weekly_sessions(monday, sunday)
@@ -4394,7 +4404,7 @@ def _render_announcements_page(request: Request):
         if not text:
             return False
         compact = text.replace("星期", "").replace("週", "").replace("周", "")
-        aliases = weekday_aliases.get(datetime.now().weekday(), set())
+        aliases = weekday_aliases.get(_hk_now().weekday(), set())
         return text in aliases or compact in aliases
 
     today_lesson_rows = [row for row in lesson_rows if _lesson_is_today(row[3])]
@@ -4798,7 +4808,7 @@ def _school_short_name(full_name: str) -> str:
 
 
 def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: int = 0, view: str = "week", school_filter: str = "", teacher_filter: str = "", status_filter: str = "", type_filter: str = ""):
-    now = datetime.now()
+    now = _hk_now()
     csrf_html = _csrf_input_html(request)
     filter_options = _get_calendar_filter_options()
     # Build filter query conditions
@@ -5235,7 +5245,7 @@ def _get_session_conflicts(start_date: date, end_date: date):
 
 
 def _render_school_monitor_page(request: Request, year: int = None, month: int = None):
-    now = datetime.now()
+    now = _hk_now()
     year = year or now.year
     month = month or now.month
     # Calculate month range
@@ -5549,7 +5559,7 @@ def _class_control_session_query(start_date: date, end_date: date):
 
 
 def _render_class_control_page(request: Request):
-    today = datetime.now().date()
+    today = _hk_today()
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
     month_start, month_end = _class_control_month_bounds(today.year, today.month)
@@ -5722,9 +5732,9 @@ async def class_control_teachers_page(
     user: tuple = Depends(require_roles("admin", "finance")),
 ):
     try:
-        target_date = datetime.strptime(date, "%Y-%m-%d").date() if date else datetime.now().date()
+        target_date = datetime.strptime(date, "%Y-%m-%d").date() if date else _hk_today()
     except ValueError:
-        target_date = datetime.now().date()
+        target_date = _hk_today()
     return HTMLResponse(_render_class_control_teachers(request, target_date, start_time[:5], end_time[:5]))
 
 
@@ -5810,7 +5820,8 @@ async def class_control_reconcile_page(
     user: tuple = Depends(require_roles("admin", "finance")),
 ):
     if not year or not month:
-        year, month = _class_control_shift_month(datetime.now().year, datetime.now().month, -1)
+        now = _hk_now()
+        year, month = _class_control_shift_month(now.year, now.month, -1)
     return HTMLResponse(_render_class_reconciliation(request, year, month, original_id=original_id))
 
 
@@ -5822,7 +5833,7 @@ async def class_control_reconcile_confirm(
     user: tuple = Depends(require_roles("admin", "finance")),
 ):
     month_start, month_end = _class_control_month_bounds(year, month)
-    effective_end = min(month_end, datetime.now().date())
+    effective_end = min(month_end, _hk_today())
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
@@ -6369,7 +6380,7 @@ def _render_attendance_page(
 ):
     user = _current_user_record(request)
     display_name = _current_display_name(request)
-    today = datetime.now()
+    today = _hk_now()
     today_date = today.strftime("%Y-%m-%d")
     today_time = today.strftime("%H:%M")
     selected_area = (selected_area or "").strip()
@@ -13776,13 +13787,14 @@ def _get_weekly_sessions(start_date: date, end_date: date):
 def _get_session_summary():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    today = datetime.now().date().isoformat()
+    today_date = _hk_today()
+    today = today_date.isoformat()
     cursor.execute(
         "SELECT COUNT(*) FROM school_sessions WHERE session_date = ? AND status NOT IN ('取消', '取消待補')",
         (today,),
     )
     today_count = cursor.fetchone()[0] or 0
-    monday = datetime.now().date() - timedelta(days=datetime.now().weekday())
+    monday = today_date - timedelta(days=today_date.weekday())
     sunday = monday + timedelta(days=6)
     cursor.execute(
         "SELECT COUNT(*) FROM school_sessions WHERE session_date BETWEEN ? AND ? AND status NOT IN ('取消', '取消待補')",
