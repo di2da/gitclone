@@ -5,6 +5,7 @@ import csv
 import html
 import re
 import base64
+import urllib.error
 import urllib.request
 from urllib.parse import quote, urlencode
 import subprocess
@@ -157,6 +158,17 @@ async def _security_gate_middleware(request: Request, call_next):
                     return Response("Forbidden", status_code=403)
 
     response = await call_next(request)
+    if (
+        unsafe_method
+        and response.status_code < 500
+        and request.url.path not in {"/login", "/logout", "/api/db/query"}
+    ):
+        try:
+            persisted = _persist_blob_database()
+        except Exception:
+            persisted = False
+        if persisted is False and os.environ.get("BLOB_READ_WRITE_TOKEN"):
+            return Response("資料持久儲存失敗，請稍後再試。", status_code=503)
     return response
 
 # ---------------------------------------------------------
@@ -2020,6 +2032,114 @@ def _resolve_db_path():
 
 DB_PATH = _resolve_db_path()
 DB_IS_EPHEMERAL = str(DB_PATH).startswith("/tmp/")
+BLOB_READ_WRITE_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN", "").strip()
+BLOB_STORE_ID = os.environ.get("BLOB_STORE_ID", "").strip()
+BLOB_DB_PATHNAME = os.environ.get("DOCMAGIC_BLOB_PATHNAME", "docmagic/docmagic.db").strip().lstrip("/")
+
+
+def _blob_normalized_store_id():
+    if BLOB_STORE_ID:
+        return BLOB_STORE_ID.removeprefix("store_")
+    if BLOB_READ_WRITE_TOKEN:
+        parts = BLOB_READ_WRITE_TOKEN.split("_")
+        if len(parts) >= 4:
+            return parts[3]
+    return ""
+
+
+def _blob_database_url():
+    store_id = _blob_normalized_store_id()
+    if not store_id or not BLOB_DB_PATHNAME:
+        return ""
+    return f"https://{store_id}.private.blob.vercel-storage.com/{quote(BLOB_DB_PATHNAME, safe='/')}"
+
+
+def _sqlite_database_is_valid(path: Path):
+    try:
+        if not path.exists() or path.stat().st_size < 4096:
+            return False
+        with path.open("rb") as handle:
+            if handle.read(16) != b"SQLite format 3\x00":
+                return False
+        conn = sqlite3.connect(str(path), timeout=5)
+        result = conn.execute("PRAGMA quick_check").fetchone()
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        conn.close()
+        return bool(result and result[0] == "ok" and {"teachers", "school_programs", "school_sessions"}.issubset(tables))
+    except Exception:
+        return False
+
+
+def _restore_blob_database_if_available(target_path: str):
+    if not BLOB_READ_WRITE_TOKEN or not (os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV")):
+        return False
+    blob_url = _blob_database_url()
+    if not blob_url:
+        return False
+    target = Path(target_path)
+    temporary = target.with_name(f"{target.name}.blob-{secrets.token_hex(6)}")
+    try:
+        request = urllib.request.Request(
+            f"{blob_url}?cache=0",
+            headers={"Authorization": f"Bearer {BLOB_READ_WRITE_TOKEN}"},
+            method="GET",
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = response.read()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary.write_bytes(payload)
+        if not _sqlite_database_is_valid(temporary):
+            temporary.unlink(missing_ok=True)
+            return False
+        shutil.move(str(temporary), str(target))
+        return True
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return False
+        return False
+    except Exception:
+        return False
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _persist_blob_database():
+    if not BLOB_READ_WRITE_TOKEN or not DB_IS_EPHEMERAL:
+        return True
+    store_id = _blob_normalized_store_id()
+    database_path = Path(DB_PATH)
+    if not store_id or not _sqlite_database_is_valid(database_path):
+        return False
+    try:
+        payload = database_path.read_bytes()
+        params = urlencode({"pathname": BLOB_DB_PATHNAME})
+        request_id = f"{store_id}:{int(time.time() * 1000)}:{secrets.token_hex(8)}"
+        request = urllib.request.Request(
+            f"https://vercel.com/api/blob/?{params}",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {BLOB_READ_WRITE_TOKEN}",
+                "Content-Type": "application/octet-stream",
+                "x-api-version": "12",
+                "x-api-blob-request-id": request_id,
+                "x-api-blob-request-attempt": "0",
+                "x-vercel-blob-store-id": store_id,
+                "x-vercel-blob-access": "private",
+                "x-content-type": "application/vnd.sqlite3",
+                "x-add-random-suffix": "0",
+                "x-allow-overwrite": "1",
+                "x-cache-control-max-age": "0",
+            },
+            method="PUT",
+        )
+        with urllib.request.urlopen(request, timeout=45) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        return result.get("pathname") == BLOB_DB_PATHNAME and bool(result.get("etag"))
+    except Exception:
+        return False
+
+
+_restore_blob_database_if_available(DB_PATH)
 DB_PROXY_BASE_URL = os.environ.get("DOCMAGIC_DB_BASE_URL", "").strip().rstrip("/")
 DB_PROXY_ENABLED = bool(DB_PROXY_BASE_URL) and os.environ.get("DOCMAGIC_DB_PROXY", "1") != "0"
 DB_RUNTIME_PROXY_ENABLED = False
