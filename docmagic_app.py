@@ -465,6 +465,7 @@ def _now():
 
 
 HK_TIMEZONE = timezone(timedelta(hours=8))
+SCHOOL_OPERATIONS_START_DATE = "2026-08-01"
 
 
 def _hk_now():
@@ -5648,11 +5649,16 @@ def _render_class_control_teachers(request: Request, target_date: date, start_ti
                GROUP_CONCAT(DISTINCT sc.name) AS school_names
         FROM teachers t
         LEFT JOIN school_programs sp ON sp.teacher_id=t.id AND sp.is_active=1
+            AND EXISTS (
+                SELECT 1 FROM school_sessions current_ss
+                WHERE current_ss.program_id=sp.id AND current_ss.session_date>=?
+            )
         LEFT JOIN schools sc ON sc.id=sp.school_id
         WHERE t.is_active=1
         GROUP BY t.id
         ORDER BY program_count DESC, t.name COLLATE NOCASE
-        """
+        """,
+        (SCHOOL_OPERATIONS_START_DATE,),
     )
     teachers = cursor.fetchall()
     cursor.execute(
@@ -5662,8 +5668,13 @@ def _render_class_control_teachers(request: Request, target_date: date, start_ti
         FROM school_programs sp
         LEFT JOIN schools sc ON sc.id=sp.school_id
         WHERE sp.is_active=1 AND sp.teacher_id IS NULL
+          AND EXISTS (
+              SELECT 1 FROM school_sessions current_ss
+              WHERE current_ss.program_id=sp.id AND current_ss.session_date>=?
+          )
         ORDER BY sp.teacher_name_snapshot, sc.name, sp.program_name
-        """
+        """,
+        (SCHOOL_OPERATIONS_START_DATE,),
     )
     unresolved = cursor.fetchall()
     conn.close()
@@ -5713,7 +5724,7 @@ def _render_class_control_teachers(request: Request, target_date: date, start_ti
     """ for row in unresolved)
 
     body = f"""
-    <div class="cc-top"><div><h1>導師安排與代課檢視</h1><div class="cc-muted">只會顯示「系統內沒有課堂衝突」，不會武斷判定導師一定得閒。</div></div><div class="cc-actions"><a class="cc-btn" href="/class-control">← 課堂控制台</a><a class="cc-btn" href="/salary/teachers">完整導師資料</a></div></div>
+    <div class="cc-top"><div><h1>導師安排與代課檢視</h1><div class="cc-muted">只計2026年8月起仍有課堂的班別；只會顯示「系統內沒有課堂衝突」，不會武斷判定導師一定得閒。</div></div><div class="cc-actions"><a class="cc-btn" href="/class-control">← 課堂控制台</a><a class="cc-btn" href="/salary/teachers">完整導師資料</a></div></div>
     {f'<div class="cc-alert">仍有 {len(unresolved)} 個班別未配對正式導師。配對後，代課搜尋先會可靠。</div>' if unresolved else '<div class="cc-ok">所有班別已配對主要導師。</div>'}
     <div class="cc-card"><h2>尋找代課候選</h2><form method="get" action="/class-control/teachers" class="cc-form-row"><div class="cc-field"><label>日期</label><input type="date" name="date" value="{target_date.isoformat()}" required></div><div class="cc-field"><label>開始</label><input type="time" name="start_time" value="{html.escape(start_time, quote=True)}"></div><div class="cc-field"><label>結束</label><input type="time" name="end_time" value="{html.escape(end_time, quote=True)}"></div><button class="cc-btn primary" type="submit">搜尋沒有撞堂導師</button></form></div>
     <div class="cc-grid"><section><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:12px;">{''.join(teacher_cards)}</div></section><aside>
