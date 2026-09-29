@@ -13702,7 +13702,7 @@ def _school_schedules_fetch(school_year: str = ""):
     return rows
 
 
-def _school_calendar_preview_html(preview, sheet_url: str = "", school_year: str = ""):
+def _school_calendar_preview_html(request: Request, preview, sheet_url: str = "", school_year: str = ""):
     summary = preview.get("summary", {})
     status_meta = {
         "ready": ("可匯入", "#166534", "#dcfce7"),
@@ -13757,10 +13757,24 @@ def _school_calendar_preview_html(preview, sheet_url: str = "", school_year: str
     warning_summary = "".join(
         f"<li>{html.escape(str(name))}：{int(count)}</li>" for name, count in warning_types.items()
     ) or "<li>沒有警告</li>"
+    confirm_form = ""
+    if sheet_url.strip():
+        confirm_form = f"""
+        <div class="card" style="margin-top:16px;border:2px solid #b89d5d;">
+            <h3>確認同步正式系統</h3>
+            <p>會以第1至77行的最新內容取代此 Google Sheet 之前匯入的課堂；第78行起及未有日期的柏德資料不會匯入。</p>
+            <form method="post" action="/salary/import/school-calendar-confirm" onsubmit="return confirm('確認以最新 Google Sheet 同步正式課堂？');">
+                {_csrf_input_html(request)}
+                <input type="hidden" name="sheet_url" value="{html.escape(sheet_url, quote=True)}">
+                <input type="hidden" name="school_year" value="{html.escape(school_year or '2026-27', quote=True)}">
+                <button type="submit" class="btn btn-primary">確認同步</button>
+            </form>
+        </div>
+        """
     return f"""
     <div class="alert-info" style="border-left:5px solid #2563eb;">
         <strong>只讀預覽：沒有寫入任何學校、課堂、點名或薪酬資料。</strong><br>
-        已固定只處理來源第1至75行；第76行開始全部排除。
+        已固定只處理來源第1至77行；第78行開始全部排除。
     </div>
     <div class="stats">
         <div class="stat-card"><div class="num">{int(summary.get('included_rows', 0))}</div><div class="label">候選班別行</div></div>
@@ -13768,7 +13782,7 @@ def _school_calendar_preview_html(preview, sheet_url: str = "", school_year: str
         <div class="stat-card"><div class="num">{int(summary.get('ready_rows', 0))}</div><div class="label">可匯入</div></div>
         <div class="stat-card"><div class="num">{int(summary.get('review_rows', 0))}</div><div class="label">需覆核</div></div>
         <div class="stat-card"><div class="num">{int(summary.get('incomplete_rows', 0))}</div><div class="label">資料不足</div></div>
-        <div class="stat-card"><div class="num">{int(summary.get('excluded_after_cutoff', 0))}</div><div class="label">第76行後排除</div></div>
+        <div class="stat-card"><div class="num">{int(summary.get('excluded_after_cutoff', 0))}</div><div class="label">第78行後排除</div></div>
     </div>
     <div class="card" style="margin-top:16px;">
         <h3>警告分類</h3>
@@ -13834,12 +13848,54 @@ def _get_session_summary():
     return {"today": today_count, "week": week_count}
 
 
-def _write_school_calendar_preview(conn, preview: dict, school_year: str = ""):
+SCHOOL_SYNC_MIN_PROGRAMS = 40
+SCHOOL_SYNC_MIN_SESSIONS = 700
+
+
+def _write_school_calendar_preview(
+    conn,
+    preview: dict,
+    school_year: str = "",
+    source_sheet_url: str = "",
+    replace_existing: bool = False,
+):
     cursor = conn.cursor()
-    imported = 0
-    for program in preview.get("programs", []):
-        if program.get("status") != "ready":
-            continue
+    programs = [
+        program for program in preview.get("programs", [])
+        if program.get("status") != "incomplete"
+        and program.get("events")
+        and "柏德" not in program.get("school_name", "")
+    ]
+    parsed_session_count = sum(len(program.get("events", [])) for program in programs)
+    if replace_existing and (
+        len(programs) < SCHOOL_SYNC_MIN_PROGRAMS
+        or parsed_session_count < SCHOOL_SYNC_MIN_SESSIONS
+    ):
+        raise ValueError("來源資料量異常，已停止同步，舊資料沒有刪除")
+
+    source_sheet_url = source_sheet_url.strip()
+    sheet_match = re.search(r"/spreadsheets/d/([^/]+)", source_sheet_url)
+    sheet_id = sheet_match.group(1) if sheet_match else ""
+    removed_programs = 0
+    removed_sessions = 0
+    if replace_existing:
+        if not sheet_id:
+            raise ValueError("無法辨認 Google Sheet ID，已停止同步")
+        cursor.execute(
+            "SELECT id FROM school_programs WHERE source_sheet_url LIKE ?",
+            (f"%{sheet_id}%",),
+        )
+        old_program_ids = [row[0] for row in cursor.fetchall()]
+        if old_program_ids:
+            placeholders = ",".join("?" for _ in old_program_ids)
+            cursor.execute(f"DELETE FROM school_sessions WHERE program_id IN ({placeholders})", old_program_ids)
+            removed_sessions = cursor.rowcount
+            cursor.execute(f"DELETE FROM school_programs WHERE id IN ({placeholders})", old_program_ids)
+            removed_programs = cursor.rowcount
+
+    imported_sessions = 0
+    imported_programs = 0
+    for program in programs:
         school_name = program.get("school_name", "").strip()
         if not school_name:
             continue
@@ -13857,7 +13913,7 @@ def _write_school_calendar_preview(conn, preview: dict, school_year: str = ""):
             school_id = cursor.lastrowid
         teacher_name = (program.get("teacher_names", [""]) or [""])[0].strip()
         cursor.execute(
-            "SELECT id FROM teachers WHERE name = ? AND is_active = 1 LIMIT 1",
+            "SELECT id FROM teachers WHERE LOWER(TRIM(name)) = LOWER(?) AND is_active = 1 LIMIT 1",
             (teacher_name,),
         )
         trow = cursor.fetchone()
@@ -13874,23 +13930,25 @@ def _write_school_calendar_preview(conn, preview: dict, school_year: str = ""):
                 school_id,
                 school_year,
                 program.get("weekday", ""),
-                program.get("program_name", ""),
+                program.get("program_name", "") or "課堂",
                 program.get("start_time", ""),
                 program.get("end_time", ""),
                 teacher_id,
                 teacher_name,
-                program.get("source_sheet_url", ""),
+                source_sheet_url,
                 str(program.get("source_row", "")),
                 program.get("schedule_text", ""),
                 "; ".join(program.get("warnings", [])),
             ),
         )
         program_id = cursor.lastrowid
+        imported_programs += 1
+        session_status = "取消" if "取消" in program.get("school_raw", "") else "已排"
         for event in program.get("events", []):
             session_date = event.get("session_date", "")
             if not session_date:
                 continue
-            source_text = event.get("source_text", "")
+            source_text = event.get("source_text", "") or event.get("source_line", "")
             source_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()[:16]
             cursor.execute(
                 """
@@ -13907,7 +13965,7 @@ def _write_school_calendar_preview(conn, preview: dict, school_year: str = ""):
                 INSERT INTO school_sessions
                     (program_id, session_date, start_time, end_time, session_type,
                      status, note, source_text, source_hash, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, '已排', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
                 (
                     program_id,
@@ -13915,13 +13973,19 @@ def _write_school_calendar_preview(conn, preview: dict, school_year: str = ""):
                     event.get("start_time", program.get("start_time", "")),
                     event.get("end_time", program.get("end_time", "")),
                     event.get("session_type", "課堂"),
+                    session_status,
                     event.get("note", ""),
                     source_text,
                     source_hash,
                 ),
             )
-            imported += 1
-    return imported
+            imported_sessions += 1
+    return {
+        "programs": imported_programs,
+        "sessions": imported_sessions,
+        "removed_programs": removed_programs,
+        "removed_sessions": removed_sessions,
+    }
 
 
 def _teacher_form_html(request: Request, teacher=None):
@@ -14406,7 +14470,7 @@ async def salary_import_page(request: Request, user: tuple = Depends(require_rol
             {csrf_html}
             <div class="stack">
                 <strong>📅 2026–27 學校課堂日期預覽（不寫入資料庫）</strong>
-                <div class="muted">先解析 Google Sheet 的日期、時間、導師、「同上」及特別活動。按指示只處理第1至75行，第76行開始全部排除。</div>
+                <div class="muted">先解析 Google Sheet 的日期、時間、導師、「同上」及特別活動。按指示只處理第1至77行，第78行開始全部排除。</div>
                 <div class="flex">
                     <div>
                         <label style="display:block;margin-bottom:4px;">學年</label>
@@ -14414,7 +14478,7 @@ async def salary_import_page(request: Request, user: tuple = Depends(require_rol
                     </div>
                     <div>
                         <label style="display:block;margin-bottom:4px;">最後處理行</label>
-                        <input type="number" name="max_source_row" value="75" min="2" max="10000" readonly style="width:110px;padding:8px 10px;border:1px solid #ccc;border-radius:4px;background:#f5f5f5;">
+                        <input type="number" name="max_source_row" value="77" min="2" max="10000" readonly style="width:110px;padding:8px 10px;border:1px solid #ccc;border-radius:4px;background:#f5f5f5;">
                     </div>
                 </div>
                 <input type="file" name="file" accept=".csv,text/csv">
@@ -14767,10 +14831,10 @@ async def salary_import_school_calendar_preview(
     file: Optional[UploadFile] = File(None),
     sheet_url: str = Form(""),
     school_year: str = Form("2026-27"),
-    max_source_row: int = Form(75),
+    max_source_row: int = Form(77),
     user: tuple = Depends(require_roles("admin", "finance")),
 ):
-    del request, user, max_source_row  # Preview is deliberately non-mutating; the row limit is fixed below.
+    del max_source_row  # Preview is deliberately non-mutating; the row limit is fixed below.
     csv_text = ""
     try:
         if file and getattr(file, "filename", ""):
@@ -14790,9 +14854,9 @@ async def salary_import_school_calendar_preview(
     preview = parse_school_calendar_csv(
         csv_text,
         school_year=school_year.strip() or "2026-27",
-        max_source_row=75,
+        max_source_row=77,
     )
-    body = _school_calendar_preview_html(preview, sheet_url=sheet_url, school_year=school_year)
+    body = _school_calendar_preview_html(request, preview, sheet_url=sheet_url, school_year=school_year)
     return render_salary_page("📅 2026–27 學校課堂日期預覽", body, user=user)
 
 
@@ -14823,15 +14887,21 @@ async def salary_import_school_calendar_confirm(
     preview = parse_school_calendar_csv(
         csv_text,
         school_year=school_year.strip() or "2026-27",
-        max_source_row=75,
+        max_source_row=77,
     )
     conn = sqlite3.connect(DB_PATH)
     try:
-        imported = _write_school_calendar_preview(conn, preview, school_year=school_year.strip() or "2026-27")
+        imported = _write_school_calendar_preview(
+            conn,
+            preview,
+            school_year=school_year.strip() or "2026-27",
+            source_sheet_url=sheet_url,
+            replace_existing=True,
+        )
         conn.commit()
         _audit_action_request(
             request, "import_school_calendar", target_type="school_sessions", target_id="",
-            result="ok", metadata={"school_year": school_year, "imported_sessions": imported}
+            result="ok", metadata={"school_year": school_year, **imported}
         )
     except Exception as exc:
         conn.rollback()
@@ -14844,7 +14914,8 @@ async def salary_import_school_calendar_confirm(
     body = f"""
         <div class="card">
             <h3>✅ 匯入成功</h3>
-            <p>已寫入 {imported} 個課堂日期。</p>
+            <p>已同步 {imported['programs']} 個班別、{imported['sessions']} 個課堂日期。</p>
+            <p>已取代舊資料：{imported['removed_programs']} 個班別、{imported['removed_sessions']} 個課堂日期。</p>
             <p>學年：{html.escape(school_year)}</p>
             <div class="flex" style="margin-top:16px;">
                 <a href="/calendar" class="btn btn-primary">查看校曆</a>

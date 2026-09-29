@@ -20,7 +20,7 @@ class SchoolCalendarParserTests(unittest.TestCase):
                 ["示範小學", "高班", "同上", "17:00-18:00", "60mins", "Teacher B", "", "", "3"],
             ]
         )
-        result = parse_school_calendar_csv(text, school_year="2026-27", max_source_row=75)
+        result = parse_school_calendar_csv(text, school_year="2026-27", max_source_row=77)
         self.assertEqual(result["summary"]["parsed_sessions"], 6)
         self.assertEqual(result["programs"][0]["teacher_names"], ["Teacher A"])
         self.assertEqual(result["programs"][0]["start_time"], "15:30")
@@ -38,18 +38,41 @@ class SchoolCalendarParserTests(unittest.TestCase):
         warnings = result["programs"][0]["warnings"]
         self.assertTrue(any("星期分段不一致" in warning for warning in warnings))
 
-    def test_excludes_source_row_76_and_below(self):
+    def test_excludes_source_row_78_and_below(self):
         rows = [["校名 星期一", "", "", "時間", "時長", "負責導師"]]
-        for source_row in range(2, 76):
+        for source_row in range(2, 78):
             rows.append([f"學校{source_row}", "班別", "10月5日", "15:00-16:00", "", "Teacher"])
         rows.append(["不應匯入學校", "班別", "10月6日", "15:00-16:00", "", "Teacher"])
         text = build_csv(rows)
-        result = parse_school_calendar_csv(text, max_source_row=75)
-        self.assertEqual(len(result["programs"]), 74)
+        result = parse_school_calendar_csv(text, max_source_row=77)
+        self.assertEqual(len(result["programs"]), 76)
         self.assertEqual(result["summary"]["excluded_after_cutoff"], 1)
         self.assertNotIn("不應匯入學校", [program["school_name"] for program in result["programs"]])
+
+    def test_keeps_teacher_name_when_phone_is_on_same_line(self):
+        text = build_csv(
+            [
+                ["校名 星期三", "", "", "時間", "時長", "負責導師"],
+                ["示範小學", "校隊", "10月7日", "15:00-16:00", "", "蘋果 +852 6299 9648"],
+            ]
+        )
+        result = parse_school_calendar_csv(text)
+        self.assertEqual(result["programs"][0]["teacher_names"], ["蘋果"])
+
+    def test_normalizes_school_suffix_alias_and_afternoon_end_time(self):
+        text = build_csv(
+            [
+                ["校名 星期六", "", "", "時間", "時長", "負責導師"],
+                ["嘉諾撤聖瑪利學校", "流行舞", "10月10日", "12:00 - 1:30", "", "Teacher"],
+                ["沙田公立學校 （男團為主）", "breaking", "10月17日", "11:00-12:00", "", "Teacher"],
+            ]
+        )
+        result = parse_school_calendar_csv(text)
+        self.assertEqual(result["programs"][0]["school_name"], "嘉諾撒聖瑪利學校")
+        self.assertEqual(result["programs"][0]["end_time"], "13:30")
+        self.assertEqual(result["programs"][1]["school_name"], "沙田公立學校")
+        self.assertEqual(result["programs"][1]["program_name"], "（男團為主） · breaking")
 
 
 if __name__ == "__main__":
     unittest.main()
-

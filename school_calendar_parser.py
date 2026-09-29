@@ -19,6 +19,12 @@ from typing import Any
 
 WEEKDAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 REVIEW_ROW_PREFIXES = ("活動可用的人", "時間：", "時間:", "暑期班")
+SCHOOL_NAME_ALIASES = {
+    "嘉諾撤聖瑪利學校": "嘉諾撒聖瑪利學校",
+    "道教青松小學(湖景邨)": "道教青松小學（湖景邨）",
+    "青衣主恩": "聖公會青衣主恩小學",
+}
+SCHOOL_SUFFIXES = ("紀念小學", "紀念中學", "小學", "中學", "學校", "幼稚園", "幼兒園")
 
 
 def _clean(value: Any) -> str:
@@ -63,7 +69,11 @@ def _teacher_names(value: str) -> list[str]:
     names: list[str] = []
     for raw_line in _clean(value).splitlines():
         line = raw_line.strip()
-        if not line or re.search(r"(?i)\bTEL\b|電話|(?:\+?852\D*)?\d{4}\D*\d{4}", line):
+        if not line:
+            continue
+        line = re.sub(r"(?i)\bTEL\b\s*[：:]?\s*", "", line)
+        line = re.sub(r"(?:\+?852[\s-]*)?\d{4}[\s-]*\d{4}", "", line).strip()
+        if not line or line in {"電話", "電話：", "電話:"}:
             continue
         line = re.sub(r"^(?:導師|主教|助教)\s*[：:]\s*", "", line).strip()
         for part in re.split(r"[/、,，]", line):
@@ -82,9 +92,39 @@ def _normalize_time_range(value: str) -> tuple[str, str]:
     if not match:
         return "", ""
     h1, m1, h2, m2 = (int(part) for part in match.groups())
+    if h2 < h1 and h2 <= 11:
+        h2 += 12
     if h1 > 23 or h2 > 23 or m1 > 59 or m2 > 59:
         return "", ""
     return f"{h1:02d}:{m1:02d}", f"{h2:02d}:{m2:02d}"
+
+
+def _school_and_program(school_raw: str, program_raw: str) -> tuple[str, str]:
+    school_line = _first_line(school_raw)
+    extra_school_lines = [line.strip() for line in _clean(school_raw).splitlines()[1:] if line.strip()]
+    canonical = SCHOOL_NAME_ALIASES.get(school_line)
+    suffix_program = ""
+    if canonical:
+        school_name = canonical
+    else:
+        school_name = school_line
+        cut_at = 0
+        for suffix in SCHOOL_SUFFIXES:
+            position = school_line.find(suffix)
+            if position >= 0:
+                candidate = position + len(suffix)
+                if not cut_at or candidate < cut_at:
+                    cut_at = candidate
+        if cut_at and cut_at < len(school_line):
+            school_name = school_line[:cut_at].strip()
+            suffix_program = school_line[cut_at:].strip()
+
+    program_name = _clean(program_raw)
+    parts = []
+    for value in (suffix_program, program_name or " · ".join(extra_school_lines)):
+        if value and value not in parts:
+            parts.append(value)
+    return school_name, " · ".join(parts)
 
 
 def _session_type(text: str) -> str:
@@ -161,7 +201,7 @@ def _expected_total(row: list[str]) -> int | None:
 def parse_school_calendar_csv(
     csv_text: str,
     school_year: str = "2026-27",
-    max_source_row: int = 75,
+    max_source_row: int = 77,
 ) -> dict[str, Any]:
     """Return a non-mutating import preview for the human-formatted timetable."""
 
@@ -197,8 +237,7 @@ def parse_school_calendar_csv(
             continue
 
         school_raw = _cell(row, 0)
-        school_name = _first_line(school_raw)
-        program_name = _cell(row, 1)
+        school_name, program_name = _school_and_program(school_raw, _cell(row, 1))
         schedule_text = _cell(row, 2)
         time_text = _cell(row, 3)
         duration_text = _cell(row, 4)
@@ -294,4 +333,3 @@ def parse_school_calendar_csv(
             "warning_types": dict(warning_counts.most_common()),
         },
     }
-
