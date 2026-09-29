@@ -4190,6 +4190,7 @@ def _render_dashboard_page(request: Request):
                     <h3>工作入口</h3>
                     <p>先揀你要處理嘅模組，再進入對應頁面。</p>
                     <div class="links">
+                        <a class="link" href="/class-control"><strong>課堂控制台</strong><span>今日／本週安排、每月核堂、導師代課、補堂及加堂。</span></a>
                         <a class="link" href="/salary/teachers"><strong>導師列表</strong><span>查看各導師班數、狀態與薪酬詳情。</span></a>
                         <a class="link" href="/salary/classes"><strong>班別列表</strong><span>整理學校、星期、導師同時薪資料。</span></a>
                         <a class="link" href="/attendance"><strong>學生點名系統</strong><span>記錄各地區課堂出席、缺席同原因。</span></a>
@@ -4606,6 +4607,16 @@ async def logout_submit(request: Request):
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
+    user = _current_user_record(request)
+    if not user:
+        return RedirectResponse("/", status_code=303)
+    if _normalize_role(user[3]) in {"admin", "finance"}:
+        return HTMLResponse(_render_class_control_page(request))
+    return HTMLResponse(_render_dashboard_page(request))
+
+
+@app.get("/modules", response_class=HTMLResponse)
+async def modules_dashboard(request: Request):
     if not _current_user_record(request):
         return RedirectResponse("/", status_code=303)
     return HTMLResponse(_render_dashboard_page(request))
@@ -4629,6 +4640,7 @@ SESSION_TYPE_COLORS = {
     "綵排": ("#92400e", "#fef3c7"),
     "表演": ("#9f1239", "#ffe4e6"),
     "補課": ("#065f46", "#d1fae5"),
+    "加堂": ("#6b21a8", "#f3e8ff"),
     "後備日": ("#4b5563", "#f3f4f6"),
     "其他": ("#374151", "#f3f4f6"),
 }
@@ -4638,6 +4650,7 @@ STATUS_COLORS = {
     "已完成": ("#1d4ed8", "#dbeafe"),
     "改期": ("#92400e", "#fef3c7"),
     "取消": ("#991b1b", "#fee2e2"),
+    "取消待補": ("#9a3412", "#ffedd5"),
     "待確認": ("#4b5563", "#f3f4f6"),
 }
 
@@ -4725,7 +4738,6 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
             LEFT JOIN schools sc ON sc.id = sp.school_id
             LEFT JOIN teachers t ON t.id = sp.teacher_id
             WHERE ss.session_date BETWEEN ? AND ?
-              AND ss.status <> '取消'
               AND sp.is_active = 1
               AND {where_clause}
             ORDER BY ss.session_date, ss.start_time, sc.name, sp.program_name
@@ -4824,11 +4836,11 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
                     </select>
                     <select name="status" onchange="this.form.submit()">
                         <option value="">全部狀態</option>
-                        {''.join(f'<option value="{html.escape(st, quote=True)}"{" selected" if st == status_filter else ""}>{html.escape(st)}</option>' for st in ["已排", "已完成", "改期", "取消", "待確認"])}
+                        {''.join(f'<option value="{html.escape(st, quote=True)}"{" selected" if st == status_filter else ""}>{html.escape(st)}</option>' for st in ["已排", "已完成", "改期", "取消待補", "取消", "待確認"])}
                     </select>
                     <select name="type" onchange="this.form.submit()">
                         <option value="">全部類型</option>
-                        {''.join(f'<option value="{html.escape(tp, quote=True)}"{" selected" if tp == type_filter else ""}>{html.escape(tp)}</option>' for tp in ["課堂", "選拔", "綵排", "表演", "補課", "後備日", "其他"])}
+                        {''.join(f'<option value="{html.escape(tp, quote=True)}"{" selected" if tp == type_filter else ""}>{html.escape(tp)}</option>' for tp in ["課堂", "選拔", "綵排", "表演", "補課", "加堂", "後備日", "其他"])}
                     </select>
                     <a href="/calendar?view=month" style="font-size:12px;color:#6b7280;">清除篩選</a>
                 </form>
@@ -4843,7 +4855,7 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
                     </tbody>
                 </table>
                 <div class="legend">
-                    {''.join(f'<div class="legend-item"><span class="legend-dot" style="background:{SESSION_TYPE_COLORS.get(tp, ("#374151", "#f3f4f6"))[0]};"></span>{tp}</div>' for tp in ["課堂", "選拔", "綵排", "表演", "補課", "後備日"])}
+                    {''.join(f'<div class="legend-item"><span class="legend-dot" style="background:{SESSION_TYPE_COLORS.get(tp, ("#374151", "#f3f4f6"))[0]};"></span>{tp}</div>' for tp in ["課堂", "選拔", "綵排", "表演", "補課", "加堂", "後備日"])}
                 </div>
             </div>
         </body>
@@ -4871,7 +4883,6 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
             LEFT JOIN schools sc ON sc.id = sp.school_id
             LEFT JOIN teachers t ON t.id = sp.teacher_id
             WHERE ss.session_date BETWEEN ? AND ?
-              AND ss.status <> '取消'
               AND sp.is_active = 1
               AND {where_clause}
             ORDER BY ss.session_date, ss.start_time, sc.name, sp.program_name
@@ -4893,7 +4904,7 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
                 type_color, type_bg = SESSION_TYPE_COLORS.get(s["session_type"] or "課堂", ("#374151", "#f3f4f6"))
                 status_options = "".join(
                     f'<option value="{st}"{" selected" if (s["status"] or "已排") == st else ""}>{st}</option>'
-                    for st in ["已排", "已完成", "改期", "取消", "待確認"]
+                    for st in ["已排", "已完成", "改期", "取消待補", "取消", "待確認"]
                 )
                 session_rows.append(f"""
                     <tr onclick="window.location.href='/calendar/session/{s['id']}'" style="cursor:pointer;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background=''">
@@ -4974,11 +4985,11 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
                     </select>
                     <select name="status" onchange="this.form.submit()">
                         <option value="">全部狀態</option>
-                        {''.join(f'<option value="{html.escape(st, quote=True)}"{" selected" if st == status_filter else ""}>{html.escape(st)}</option>' for st in ["已排", "已完成", "改期", "取消", "待確認"])}
+                        {''.join(f'<option value="{html.escape(st, quote=True)}"{" selected" if st == status_filter else ""}>{html.escape(st)}</option>' for st in ["已排", "已完成", "改期", "取消待補", "取消", "待確認"])}
                     </select>
                     <select name="type" onchange="this.form.submit()">
                         <option value="">全部類型</option>
-                        {''.join(f'<option value="{html.escape(tp, quote=True)}"{" selected" if tp == type_filter else ""}>{html.escape(tp)}</option>' for tp in ["課堂", "選拔", "綵排", "表演", "補課", "後備日", "其他"])}
+                        {''.join(f'<option value="{html.escape(tp, quote=True)}"{" selected" if tp == type_filter else ""}>{html.escape(tp)}</option>' for tp in ["課堂", "選拔", "綵排", "表演", "補課", "加堂", "後備日", "其他"])}
                     </select>
                     <a href="/calendar?view=week" style="font-size:12px;color:#6b7280;">清除篩選</a>
                 </form>
@@ -4986,7 +4997,7 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
                     {''.join(day_cards)}
                 </div>
                 <div class="legend">
-                    {''.join(f'<div class="legend-item"><span class="legend-dot" style="background:{SESSION_TYPE_COLORS.get(tp, ("#374151", "#f3f4f6"))[0]};"></span>{tp}</div>' for tp in ["課堂", "選拔", "綵排", "表演", "補課", "後備日"])}
+                    {''.join(f'<div class="legend-item"><span class="legend-dot" style="background:{SESSION_TYPE_COLORS.get(tp, ("#374151", "#f3f4f6"))[0]};"></span>{tp}</div>' for tp in ["課堂", "選拔", "綵排", "表演", "補課", "加堂", "後備日"])}
                 </div>
             </div>
         </body>
@@ -5033,7 +5044,7 @@ async def calendar_session_status_update(
     user = _current_user_record(request)
     if not user:
         return RedirectResponse("/", status_code=303)
-    allowed_statuses = {"已排", "已完成", "改期", "取消", "待確認"}
+    allowed_statuses = {"已排", "已完成", "改期", "取消待補", "取消", "待確認"}
     if status not in allowed_statuses:
         return HTMLResponse("<h1>Invalid status</h1>", status_code=400)
     conn = sqlite3.connect(DB_PATH)
@@ -5069,7 +5080,7 @@ def _get_session_conflicts(start_date: date, end_date: date):
         LEFT JOIN schools sc ON sc.id = sp.school_id
         LEFT JOIN teachers t ON t.id = sp.teacher_id
         WHERE ss.session_date BETWEEN ? AND ?
-          AND ss.status <> '取消'
+          AND ss.status NOT IN ('取消', '取消待補')
           AND sp.is_active = 1
           AND sp.teacher_id IS NOT NULL
         ORDER BY sp.teacher_id, ss.session_date, ss.start_time
@@ -5128,7 +5139,7 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
             sc.name AS school_name,
             COUNT(DISTINCT ss.id) AS total_sessions,
             SUM(CASE WHEN ss.status = '已完成' THEN 1 ELSE 0 END) AS completed_sessions,
-            SUM(CASE WHEN ss.status = '取消' THEN 1 ELSE 0 END) AS cancelled_sessions,
+            SUM(CASE WHEN ss.status IN ('取消', '取消待補') THEN 1 ELSE 0 END) AS cancelled_sessions,
             SUM(CASE WHEN ss.status = '改期' THEN 1 ELSE 0 END) AS rescheduled_sessions,
             COUNT(DISTINCT sp.teacher_id) AS teacher_count,
             COUNT(DISTINCT sp.id) AS program_count
@@ -5136,7 +5147,6 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
         LEFT JOIN school_programs sp ON sp.school_id = sc.id AND sp.is_active = 1
         LEFT JOIN school_sessions ss ON ss.program_id = sp.id
             AND ss.session_date BETWEEN ? AND ?
-            AND ss.status <> '取消'
         WHERE sc.is_active = 1
         GROUP BY sc.id, sc.name
         ORDER BY total_sessions DESC, sc.name
@@ -5158,7 +5168,6 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
         LEFT JOIN school_programs sp ON sp.teacher_id = t.id AND sp.is_active = 1
         LEFT JOIN school_sessions ss ON ss.program_id = sp.id
             AND ss.session_date BETWEEN ? AND ?
-            AND ss.status <> '取消'
         WHERE t.is_active = 1
         GROUP BY t.id, t.name
         ORDER BY total_sessions DESC, t.name
@@ -5177,7 +5186,6 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
         FROM school_sessions ss
         JOIN school_programs sp ON sp.id = ss.program_id
         WHERE ss.session_date BETWEEN ? AND ?
-          AND ss.status <> '取消'
           AND sp.is_active = 1
         GROUP BY week_num
         ORDER BY week_num
@@ -5319,6 +5327,457 @@ async def school_monitor_page(request: Request, year: int = None, month: int = N
     if not _current_user_record(request):
         return RedirectResponse("/", status_code=303)
     return HTMLResponse(_render_school_monitor_page(request, year=year, month=month))
+
+
+def _class_control_month_bounds(year: int, month: int):
+    from calendar import monthrange
+
+    year = max(2020, min(2100, int(year)))
+    month = max(1, min(12, int(month)))
+    return date(year, month, 1), date(year, month, monthrange(year, month)[1])
+
+
+def _class_control_shift_month(year: int, month: int, delta: int):
+    index = year * 12 + (month - 1) + delta
+    return index // 12, index % 12 + 1
+
+
+def _class_control_status_badge(status: str):
+    value = (status or "已排").strip()
+    color, background = STATUS_COLORS.get(value, ("#374151", "#f3f4f6"))
+    return f'<span class="cc-badge" style="color:{color};background:{background};">{html.escape(value)}</span>'
+
+
+def _class_control_type_badge(session_type: str):
+    value = (session_type or "課堂").strip()
+    color, background = SESSION_TYPE_COLORS.get(value, ("#374151", "#f3f4f6"))
+    return f'<span class="cc-badge" style="color:{color};background:{background};">{html.escape(value)}</span>'
+
+
+def _class_control_shell(title: str, body: str):
+    return f"""
+    <html lang="zh-HK">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{APP_NAME} - {html.escape(title)}</title>
+        <style>
+            :root {{ --bg:#f5f1e8; --paper:#fff; --ink:#111; --muted:#69707d; --line:#e5e7eb; --gold:#b89d5d; --gold-soft:#f4ead2; }}
+            * {{ box-sizing:border-box; }}
+            body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif; background:var(--bg); color:var(--ink); }}
+            .cc-wrap {{ max-width:1320px; margin:0 auto; padding:22px; }}
+            .cc-top {{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }}
+            .cc-top h1 {{ margin:0 0 5px; font-size:25px; }}
+            .cc-muted {{ color:var(--muted); font-size:13px; line-height:1.55; }}
+            .cc-actions {{ display:flex; gap:8px; flex-wrap:wrap; }}
+            .cc-btn {{ display:inline-block; padding:9px 13px; border-radius:10px; border:1px solid var(--line); background:#fff; color:#111; text-decoration:none; font-size:13px; cursor:pointer; }}
+            .cc-btn.primary {{ background:#111; color:#fff; border-color:#111; }}
+            .cc-btn.gold {{ background:var(--gold); color:#fff; border-color:var(--gold); }}
+            .cc-stats {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px; }}
+            .cc-stat, .cc-card {{ background:var(--paper); border:1px solid var(--line); border-radius:16px; padding:17px; }}
+            .cc-stat strong {{ display:block; font-size:27px; margin-bottom:4px; }}
+            .cc-card {{ margin-bottom:16px; }}
+            .cc-card h2 {{ margin:0 0 12px; font-size:17px; }}
+            .cc-grid {{ display:grid; grid-template-columns:1.3fr .7fr; gap:16px; align-items:start; }}
+            .cc-table-wrap {{ overflow:auto; border:1px solid var(--line); border-radius:12px; }}
+            .cc-table {{ width:100%; border-collapse:collapse; min-width:780px; background:#fff; }}
+            .cc-table th {{ text-align:left; padding:10px; background:#f9fafb; font-size:12px; color:#4b5563; border-bottom:1px solid var(--line); }}
+            .cc-table td {{ padding:10px; border-bottom:1px solid #f0f1f3; font-size:13px; vertical-align:top; }}
+            .cc-table tr:last-child td {{ border-bottom:0; }}
+            .cc-badge {{ display:inline-block; padding:3px 7px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap; }}
+            .cc-list {{ display:grid; gap:8px; }}
+            .cc-list-item {{ border:1px solid var(--line); border-radius:12px; padding:11px 12px; background:#fff; }}
+            .cc-list-item strong {{ font-size:14px; }}
+            .cc-form-row {{ display:flex; gap:8px; align-items:end; flex-wrap:wrap; }}
+            .cc-field {{ display:grid; gap:4px; min-width:125px; flex:1; }}
+            .cc-field label {{ font-size:12px; color:var(--muted); }}
+            .cc-field input, .cc-field select, .cc-field textarea {{ width:100%; padding:9px 10px; border:1px solid #d1d5db; border-radius:9px; background:#fff; font-size:13px; }}
+            .cc-field textarea {{ min-height:70px; resize:vertical; }}
+            .cc-alert {{ padding:12px 14px; border-radius:12px; background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; font-size:13px; margin-bottom:14px; }}
+            .cc-ok {{ padding:12px 14px; border-radius:12px; background:#ecfdf5; border:1px solid #a7f3d0; color:#166534; font-size:13px; margin-bottom:14px; }}
+            @media (max-width:900px) {{ .cc-grid {{ grid-template-columns:1fr; }} .cc-stats {{ grid-template-columns:repeat(2,1fr); }} .cc-top {{ flex-direction:column; }} }}
+            @media (max-width:560px) {{ .cc-wrap {{ padding:12px; }} .cc-stats {{ grid-template-columns:1fr 1fr; gap:8px; }} .cc-stat {{ padding:12px; }} .cc-stat strong {{ font-size:22px; }} }}
+        </style>
+    </head>
+    <body><main class="cc-wrap">{body}</main></body>
+    </html>
+    """
+
+
+def _class_control_session_query(start_date: date, end_date: date):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT ss.id, ss.session_date, ss.start_time, ss.end_time, ss.session_type, ss.status,
+               ss.note, ss.original_session_id, sp.id AS program_id, sp.program_name,
+               sp.teacher_id, sp.teacher_name_snapshot, sc.name AS school_name,
+               COALESCE(t.name, sp.teacher_name_snapshot, '') AS teacher_name
+        FROM school_sessions ss
+        JOIN school_programs sp ON sp.id=ss.program_id
+        LEFT JOIN schools sc ON sc.id=sp.school_id
+        LEFT JOIN teachers t ON t.id=sp.teacher_id
+        WHERE ss.session_date BETWEEN ? AND ? AND sp.is_active=1
+        ORDER BY ss.session_date, ss.start_time, sc.name, sp.program_name
+        """,
+        (start_date.isoformat(), end_date.isoformat()),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+def _render_class_control_page(request: Request):
+    today = datetime.now().date()
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    month_start, month_end = _class_control_month_bounds(today.year, today.month)
+    previous_year, previous_month = _class_control_shift_month(today.year, today.month, -1)
+    previous_start, previous_end = _class_control_month_bounds(previous_year, previous_month)
+
+    today_rows = _class_control_session_query(today, today)
+    week_rows = _class_control_session_query(monday, sunday)
+    month_rows = _class_control_session_query(month_start, month_end)
+    previous_rows = _class_control_session_query(previous_start, previous_end)
+    pending_previous = sum(1 for row in previous_rows if row["status"] in {"已排", "待確認"})
+    pending_makeup = sum(1 for row in month_rows + previous_rows if row["status"] == "取消待補")
+
+    def row_html(row, include_date=True):
+        date_cell = f'<td>{html.escape(row["session_date"] or "")}</td>' if include_date else ""
+        return f"""
+        <tr>
+            {date_cell}
+            <td>{html.escape((row['start_time'] or '').strip()[:5])}</td>
+            <td><strong>{html.escape(row['school_name'] or '-')}</strong><div class="cc-muted">{html.escape(row['program_name'] or '-')}</div></td>
+            <td>{html.escape(row['teacher_name'] or '未配對')}</td>
+            <td>{_class_control_type_badge(row['session_type'])}</td>
+            <td>{_class_control_status_badge(row['status'])}</td>
+            <td><a class="cc-btn" href="/calendar/session/{row['id']}">詳情</a></td>
+        </tr>"""
+
+    today_table = "".join(row_html(row, include_date=False) for row in today_rows)
+    week_table = "".join(row_html(row, include_date=True) for row in week_rows)
+    body = f"""
+    <div class="cc-top">
+        <div><h1>學校課堂控制台</h1><div class="cc-muted">平日只睇安排；每月月初一次過核對上月課堂。</div></div>
+        <div class="cc-actions">
+            <a class="cc-btn" href="/modules">其他功能</a>
+            <a class="cc-btn" href="/invoice">發票</a>
+            <a class="cc-btn" href="/calendar?view=month">完整校曆</a>
+            <a class="cc-btn primary" href="/class-control/teachers">導師／代課</a>
+        </div>
+    </div>
+    <div class="cc-stats">
+        <div class="cc-stat"><strong>{len(today_rows)}</strong><span>今日課堂</span></div>
+        <div class="cc-stat"><strong>{len(week_rows)}</strong><span>本週課堂</span></div>
+        <div class="cc-stat"><strong>{len(month_rows)}</strong><span>本月課堂</span></div>
+        <div class="cc-stat"><strong>{pending_makeup}</strong><span>待安排補堂</span></div>
+    </div>
+    {f'<div class="cc-alert"><strong>{previous_year}年{previous_month}月仍有 {pending_previous} 堂未核對。</strong> 你毋須每日處理；月初一次過確認即可。 <a href="/class-control/reconcile?year={previous_year}&month={previous_month}">開始月結核堂 →</a></div>' if pending_previous else f'<div class="cc-ok">{previous_year}年{previous_month}月課堂已完成核對。</div>'}
+    <div class="cc-grid">
+        <section>
+            <div class="cc-card">
+                <h2>今日 · {today.month}月{today.day}日</h2>
+                <div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>時間</th><th>學校／班別</th><th>導師</th><th>類型</th><th>狀態</th><th></th></tr></thead><tbody>{today_table or '<tr><td colspan="6" class="cc-muted">今日沒有課堂。</td></tr>'}</tbody></table></div>
+            </div>
+            <div class="cc-card">
+                <h2>本週 · {monday.month}/{monday.day}–{sunday.month}/{sunday.day}</h2>
+                <div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>日期</th><th>時間</th><th>學校／班別</th><th>導師</th><th>類型</th><th>狀態</th><th></th></tr></thead><tbody>{week_table or '<tr><td colspan="7" class="cc-muted">本週沒有課堂。</td></tr>'}</tbody></table></div>
+            </div>
+        </section>
+        <aside>
+            <div class="cc-card"><h2>每月處理</h2><div class="cc-list">
+                <a class="cc-list-item" href="/class-control/reconcile?year={previous_year}&month={previous_month}" style="text-decoration:none;color:inherit;"><strong>核對 {previous_year}年{previous_month}月</strong><div class="cc-muted">正常課堂一鍵確認，只處理例外。</div></a>
+                <a class="cc-list-item" href="/class-control/reconcile?year={today.year}&month={today.month}" style="text-decoration:none;color:inherit;"><strong>記錄突發／補堂／加堂</strong><div class="cc-muted">取消與補堂會保留關聯。</div></a>
+                <a class="cc-list-item" href="/school-monitor?year={today.year}&month={today.month}" style="text-decoration:none;color:inherit;"><strong>查看課堂月報</strong><div class="cc-muted">學校、導師及完成率。</div></a>
+            </div></div>
+            <div class="cc-card"><h2>原則</h2><div class="cc-muted">導師毋須在本系統打卡。系統以原定校曆為基礎；你只需在月底確認正常課堂，並記錄取消、補堂及加堂等例外。</div></div>
+        </aside>
+    </div>
+    """
+    return _class_control_shell("課堂控制台", body)
+
+
+@app.get("/class-control", response_class=HTMLResponse)
+async def class_control_page(request: Request, user: tuple = Depends(require_roles("admin", "finance"))):
+    return HTMLResponse(_render_class_control_page(request))
+
+
+def _render_class_control_teachers(request: Request, target_date: date, start_time: str = "", end_time: str = ""):
+    monday = target_date - timedelta(days=target_date.weekday())
+    sunday = monday + timedelta(days=6)
+    sessions = _class_control_session_query(monday, sunday)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT t.id, t.name, t.phone, t.area, t.teaching_availability,
+               COUNT(DISTINCT sp.id) AS program_count,
+               GROUP_CONCAT(DISTINCT sc.name) AS school_names
+        FROM teachers t
+        LEFT JOIN school_programs sp ON sp.teacher_id=t.id AND sp.is_active=1
+        LEFT JOIN schools sc ON sc.id=sp.school_id
+        WHERE t.is_active=1
+        GROUP BY t.id
+        ORDER BY program_count DESC, t.name COLLATE NOCASE
+        """
+    )
+    teachers = cursor.fetchall()
+    cursor.execute(
+        """
+        SELECT sp.id, sp.teacher_name_snapshot, sp.program_name, sp.weekday,
+               sp.default_start_time, sc.name AS school_name
+        FROM school_programs sp
+        LEFT JOIN schools sc ON sc.id=sp.school_id
+        WHERE sp.is_active=1 AND sp.teacher_id IS NULL
+        ORDER BY sp.teacher_name_snapshot, sc.name, sp.program_name
+        """
+    )
+    unresolved = cursor.fetchall()
+    conn.close()
+
+    schedules = {}
+    for session in sessions:
+        teacher_id = session["teacher_id"]
+        if teacher_id:
+            schedules.setdefault(teacher_id, []).append(session)
+
+    candidate_ids = set()
+    if start_time and end_time:
+        for teacher in teachers:
+            if not teacher["program_count"]:
+                continue
+            conflict = False
+            for session in schedules.get(teacher["id"], []):
+                if session["session_date"] != target_date.isoformat() or session["status"] in {"取消", "取消待補"}:
+                    continue
+                existing_start = (session["start_time"] or "")[:5]
+                existing_end = (session["end_time"] or existing_start)[:5]
+                if existing_start and existing_end and start_time < existing_end and existing_start < end_time:
+                    conflict = True
+                    break
+            if not conflict:
+                candidate_ids.add(teacher["id"])
+
+    teacher_cards = []
+    for teacher in teachers:
+        weekly = schedules.get(teacher["id"], [])
+        week_lines = "".join(
+            f'<div class="cc-list-item"><strong>{html.escape(s["session_date"])} {html.escape((s["start_time"] or "")[:5])}</strong><div class="cc-muted">{html.escape(s["school_name"] or "-")} · {html.escape(s["program_name"] or "-")}</div></div>'
+            for s in weekly
+        ) or '<div class="cc-muted">本週系統內沒有已配對課堂。</div>'
+        candidate = teacher["id"] in candidate_ids
+        teacher_cards.append(f"""
+        <div class="cc-card" style="margin-bottom:12px;{'border-color:#86efac;background:#f0fdf4;' if candidate else ''}">
+            <div style="display:flex;justify-content:space-between;gap:10px;align-items:start;"><div><h2 style="margin-bottom:4px;">{html.escape(teacher['name'])}</h2><div class="cc-muted">主要學校：{html.escape(teacher['school_names'] or '未配對')}</div></div>{'<span class="cc-badge" style="color:#166534;background:#dcfce7;">沒有課堂衝突</span>' if candidate else ''}</div>
+            <div class="cc-muted" style="margin:8px 0;">電話：{html.escape(teacher['phone'] or '-')} · 地區：{html.escape(teacher['area'] or '-')}</div>
+            <div class="cc-list">{week_lines}</div>
+        </div>""")
+
+    teacher_options = "".join(f'<option value="{t["id"]}">{html.escape(t["name"])}</option>' for t in teachers)
+    unresolved_rows = "".join(f"""
+        <tr><td>{html.escape(row['teacher_name_snapshot'] or '未填')}</td><td>{html.escape(row['school_name'] or '-')}<div class="cc-muted">{html.escape(row['program_name'] or '-')}</div></td><td>{html.escape(row['weekday'] or '')} {html.escape((row['default_start_time'] or '')[:5])}</td><td>
+        <form method="post" action="/class-control/program/{row['id']}/teacher" class="cc-form-row">{_csrf_input_html(request)}<select name="teacher_id" required><option value="">選擇主要導師</option>{teacher_options}</select><button class="cc-btn primary" type="submit">配對</button></form></td></tr>
+    """ for row in unresolved)
+
+    body = f"""
+    <div class="cc-top"><div><h1>導師安排與代課檢視</h1><div class="cc-muted">只會顯示「系統內沒有課堂衝突」，不會武斷判定導師一定得閒。</div></div><div class="cc-actions"><a class="cc-btn" href="/class-control">← 課堂控制台</a><a class="cc-btn" href="/salary/teachers">完整導師資料</a></div></div>
+    {f'<div class="cc-alert">仍有 {len(unresolved)} 個班別未配對正式導師。配對後，代課搜尋先會可靠。</div>' if unresolved else '<div class="cc-ok">所有班別已配對主要導師。</div>'}
+    <div class="cc-card"><h2>尋找代課候選</h2><form method="get" action="/class-control/teachers" class="cc-form-row"><div class="cc-field"><label>日期</label><input type="date" name="date" value="{target_date.isoformat()}" required></div><div class="cc-field"><label>開始</label><input type="time" name="start_time" value="{html.escape(start_time, quote=True)}"></div><div class="cc-field"><label>結束</label><input type="time" name="end_time" value="{html.escape(end_time, quote=True)}"></div><button class="cc-btn primary" type="submit">搜尋沒有撞堂導師</button></form></div>
+    <div class="cc-grid"><section><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:12px;">{''.join(teacher_cards)}</div></section><aside>
+    <div class="cc-card"><h2>未配對班別</h2><div class="cc-table-wrap"><table class="cc-table" style="min-width:650px;"><thead><tr><th>原始導師名</th><th>學校／班別</th><th>時間</th><th>主要導師</th></tr></thead><tbody>{unresolved_rows or '<tr><td colspan="4">全部完成</td></tr>'}</tbody></table></div></div>
+    </aside></div>
+    """
+    return _class_control_shell("導師安排", body)
+
+
+@app.get("/class-control/teachers", response_class=HTMLResponse)
+async def class_control_teachers_page(
+    request: Request,
+    date: str = "",
+    start_time: str = "",
+    end_time: str = "",
+    user: tuple = Depends(require_roles("admin", "finance")),
+):
+    try:
+        target_date = datetime.strptime(date, "%Y-%m-%d").date() if date else datetime.now().date()
+    except ValueError:
+        target_date = datetime.now().date()
+    return HTMLResponse(_render_class_control_teachers(request, target_date, start_time[:5], end_time[:5]))
+
+
+@app.post("/class-control/program/{program_id}/teacher")
+async def class_control_program_teacher(
+    request: Request,
+    program_id: int,
+    teacher_id: int = Form(...),
+    user: tuple = Depends(require_roles("admin", "finance")),
+):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT teacher_name_snapshot FROM school_programs WHERE id=?", (program_id,))
+    row = cursor.fetchone()
+    cursor.execute("SELECT name FROM teachers WHERE id=? AND is_active=1", (teacher_id,))
+    teacher = cursor.fetchone()
+    if not row or not teacher:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Program or teacher not found")
+    snapshot = (row[0] or "").strip()
+    if snapshot:
+        cursor.execute("UPDATE school_programs SET teacher_id=?, updated_at=CURRENT_TIMESTAMP WHERE LOWER(TRIM(teacher_name_snapshot))=LOWER(?)", (teacher_id, snapshot))
+    else:
+        cursor.execute("UPDATE school_programs SET teacher_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (teacher_id, program_id))
+    updated = cursor.rowcount
+    conn.commit()
+    conn.close()
+    _audit_action_request(request, "map_program_teacher", target_type="school_program", target_id=str(program_id), actor=user, after={"teacher_id": teacher_id, "programs_updated": updated})
+    return RedirectResponse("/class-control/teachers", status_code=303)
+
+
+def _render_class_reconciliation(request: Request, year: int, month: int, original_id: int = 0):
+    month_start, month_end = _class_control_month_bounds(year, month)
+    previous_year, previous_month = _class_control_shift_month(year, month, -1)
+    next_year, next_month = _class_control_shift_month(year, month, 1)
+    rows = _class_control_session_query(month_start, month_end)
+    counts = {status: sum(1 for row in rows if row["status"] == status) for status in ["已排", "待確認", "已完成", "取消待補", "取消", "改期"]}
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT sp.id, sp.program_name, sp.default_start_time, sp.default_end_time, sc.name AS school_name,
+               COALESCE(t.name, sp.teacher_name_snapshot, '') AS teacher_name
+        FROM school_programs sp LEFT JOIN schools sc ON sc.id=sp.school_id LEFT JOIN teachers t ON t.id=sp.teacher_id
+        WHERE sp.is_active=1 ORDER BY sc.name, sp.program_name
+    """)
+    programs = cursor.fetchall()
+    original = None
+    if original_id:
+        cursor.execute("SELECT id, program_id, session_date, start_time, end_time FROM school_sessions WHERE id=?", (original_id,))
+        original = cursor.fetchone()
+    conn.close()
+    status_values = ["已排", "待確認", "已完成", "取消待補", "取消", "改期"]
+    type_values = ["課堂", "補課", "加堂", "選拔", "綵排", "表演", "後備日", "其他"]
+    row_forms = []
+    for row in rows:
+        status_options = "".join(f'<option value="{value}"{" selected" if row["status"] == value else ""}>{value}</option>' for value in status_values)
+        type_options = "".join(f'<option value="{value}"{" selected" if row["session_type"] == value else ""}>{value}</option>' for value in type_values)
+        makeup_link = f'<a class="cc-btn gold" href="/class-control/reconcile?year={year}&month={month}&original_id={row["id"]}#add-session">安排補堂</a>' if row["status"] == "取消待補" else ""
+        row_forms.append(f"""
+        <tr><td>{html.escape(row['session_date'])}<div class="cc-muted">{html.escape((row['start_time'] or '')[:5])}–{html.escape((row['end_time'] or '')[:5])}</div></td><td><strong>{html.escape(row['school_name'] or '-')}</strong><div class="cc-muted">{html.escape(row['program_name'] or '-')} · {html.escape(row['teacher_name'] or '未配對')}</div></td><td>
+        <form method="post" action="/class-control/session/{row['id']}/update" class="cc-form-row">{_csrf_input_html(request)}<input type="hidden" name="year" value="{year}"><input type="hidden" name="month" value="{month}"><select name="session_type">{type_options}</select><select name="status">{status_options}</select><input name="note" value="{html.escape(row['note'] or '', quote=True)}" placeholder="取消原因／備註"><button class="cc-btn" type="submit">儲存</button>{makeup_link}</form>
+        </td></tr>""")
+    program_options = "".join(f'<option value="{p["id"]}"{" selected" if original and original["program_id"] == p["id"] else ""}>{html.escape(p["school_name"] or "-")}｜{html.escape(p["program_name"] or "-")}｜{html.escape(p["teacher_name"] or "未配對")}</option>' for p in programs)
+    default_type = "補課" if original else "加堂"
+    default_date = original["session_date"] if original else month_start.isoformat()
+    body = f"""
+    <div class="cc-top"><div><h1>{year}年{month}月 · 月結核堂</h1><div class="cc-muted">正常課堂一次過確認；只逐項處理取消、改期、補堂及加堂。</div></div><div class="cc-actions"><a class="cc-btn" href="/class-control">← 課堂控制台</a><a class="cc-btn" href="/class-control/reconcile?year={previous_year}&month={previous_month}">← 上月</a><a class="cc-btn" href="/class-control/reconcile?year={next_year}&month={next_month}">下月 →</a></div></div>
+    <div class="cc-stats"><div class="cc-stat"><strong>{len(rows)}</strong><span>總課堂</span></div><div class="cc-stat"><strong>{counts['已完成']}</strong><span>已完成</span></div><div class="cc-stat"><strong>{counts['已排'] + counts['待確認']}</strong><span>待核對</span></div><div class="cc-stat"><strong>{counts['取消待補']}</strong><span>待補堂</span></div></div>
+    <div class="cc-card"><h2>一次過確認正常課堂</h2><div class="cc-muted" style="margin-bottom:10px;">只會將本月已過日期而仍為「已排／待確認」的課堂改成「已完成」；取消及改期不會受影響。</div><form method="post" action="/class-control/reconcile/confirm" onsubmit="return confirm('確認將本月其餘正常課堂標示為已完成？');">{_csrf_input_html(request)}<input type="hidden" name="year" value="{year}"><input type="hidden" name="month" value="{month}"><button class="cc-btn primary" type="submit">確認本月其餘正常課堂已完成</button></form></div>
+    <div class="cc-card"><h2>逐項例外</h2><div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>日期／時間</th><th>學校／班別／導師</th><th>類型、狀態及備註</th></tr></thead><tbody>{''.join(row_forms) or '<tr><td colspan="3">本月沒有課堂。</td></tr>'}</tbody></table></div></div>
+    <div class="cc-card" id="add-session"><h2>{'為取消課堂安排補堂' if original else '新增補堂／加堂'}</h2>{f'<div class="cc-alert">補堂完成建立後，原課堂會由「取消待補」改為「取消」。</div>' if original else ''}<form method="post" action="/class-control/session/create" class="cc-form-row">{_csrf_input_html(request)}<input type="hidden" name="return_year" value="{year}"><input type="hidden" name="return_month" value="{month}"><input type="hidden" name="original_session_id" value="{original_id if original else 0}"><div class="cc-field" style="min-width:300px;"><label>班別</label><select name="program_id" required>{program_options}</select></div><div class="cc-field"><label>日期</label><input type="date" name="session_date" value="{default_date}" required></div><div class="cc-field"><label>開始</label><input type="time" name="start_time" value="{html.escape((original['start_time'] or '')[:5] if original else '', quote=True)}"></div><div class="cc-field"><label>結束</label><input type="time" name="end_time" value="{html.escape((original['end_time'] or '')[:5] if original else '', quote=True)}"></div><div class="cc-field"><label>類型</label><select name="session_type"><option value="補課"{" selected" if default_type == "補課" else ""}>補課</option><option value="加堂"{" selected" if default_type == "加堂" else ""}>加堂</option></select></div><div class="cc-field"><label>備註</label><input name="note" placeholder="原因／安排"></div><button class="cc-btn primary" type="submit">新增課堂</button></form></div>
+    """
+    return _class_control_shell("月結核堂", body)
+
+
+@app.get("/class-control/reconcile", response_class=HTMLResponse)
+async def class_control_reconcile_page(
+    request: Request,
+    year: int = 0,
+    month: int = 0,
+    original_id: int = 0,
+    user: tuple = Depends(require_roles("admin", "finance")),
+):
+    if not year or not month:
+        year, month = _class_control_shift_month(datetime.now().year, datetime.now().month, -1)
+    return HTMLResponse(_render_class_reconciliation(request, year, month, original_id=original_id))
+
+
+@app.post("/class-control/reconcile/confirm")
+async def class_control_reconcile_confirm(
+    request: Request,
+    year: int = Form(...),
+    month: int = Form(...),
+    user: tuple = Depends(require_roles("admin", "finance")),
+):
+    month_start, month_end = _class_control_month_bounds(year, month)
+    effective_end = min(month_end, datetime.now().date())
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE school_sessions SET status='已完成', updated_at=CURRENT_TIMESTAMP WHERE session_date BETWEEN ? AND ? AND status IN ('已排','待確認')",
+        (month_start.isoformat(), effective_end.isoformat()),
+    )
+    updated = cursor.rowcount
+    conn.commit()
+    conn.close()
+    _audit_action_request(request, "monthly_session_confirm", target_type="school_session", target_id=f"{year}-{month:02d}", actor=user, after={"confirmed": updated})
+    return RedirectResponse(f"/class-control/reconcile?year={year}&month={month}", status_code=303)
+
+
+@app.post("/class-control/session/{session_id}/update")
+async def class_control_session_update(
+    request: Request,
+    session_id: int,
+    year: int = Form(...),
+    month: int = Form(...),
+    session_type: str = Form("課堂"),
+    status: str = Form("已排"),
+    note: str = Form(""),
+    user: tuple = Depends(require_roles("admin", "finance")),
+):
+    allowed_statuses = {"已排", "待確認", "已完成", "取消待補", "取消", "改期"}
+    allowed_types = {"課堂", "補課", "加堂", "選拔", "綵排", "表演", "後備日", "其他"}
+    if status not in allowed_statuses or session_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Invalid session value")
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE school_sessions SET session_type=?, status=?, note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (session_type, status, note.strip(), session_id))
+    conn.commit()
+    conn.close()
+    _audit_action_request(request, "monthly_session_exception", target_type="school_session", target_id=str(session_id), actor=user, after={"status": status, "session_type": session_type, "note": note.strip()})
+    return RedirectResponse(f"/class-control/reconcile?year={year}&month={month}", status_code=303)
+
+
+@app.post("/class-control/session/create")
+async def class_control_session_create(
+    request: Request,
+    program_id: int = Form(...),
+    session_date: str = Form(...),
+    start_time: str = Form(""),
+    end_time: str = Form(""),
+    session_type: str = Form("加堂"),
+    note: str = Form(""),
+    original_session_id: int = Form(0),
+    return_year: int = Form(...),
+    return_month: int = Form(...),
+    user: tuple = Depends(require_roles("admin", "finance")),
+):
+    if session_type not in {"補課", "加堂"}:
+        raise HTTPException(status_code=400, detail="Invalid session type")
+    try:
+        datetime.strptime(session_date, "%Y-%m-%d")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid date") from exc
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM school_programs WHERE id=? AND is_active=1", (program_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Program not found")
+    cursor.execute(
+        """INSERT INTO school_sessions (program_id, session_date, start_time, end_time, session_type, status, original_session_id, note, source_text, source_hash)
+           VALUES (?, ?, ?, ?, ?, '已排', ?, ?, 'manual', ?)""",
+        (program_id, session_date, start_time.strip(), end_time.strip(), session_type, original_session_id or None, note.strip(), f"manual:{secrets.token_urlsafe(16)}"),
+    )
+    new_id = cursor.lastrowid
+    if original_session_id:
+        cursor.execute("UPDATE school_sessions SET status='取消', updated_at=CURRENT_TIMESTAMP WHERE id=?", (original_session_id,))
+    conn.commit()
+    conn.close()
+    _audit_action_request(request, "create_extra_session", target_type="school_session", target_id=str(new_id), actor=user, after={"session_type": session_type, "date": session_date, "original_session_id": original_session_id or None})
+    return RedirectResponse(f"/class-control/reconcile?year={return_year}&month={return_month}", status_code=303)
 
 
 def _render_session_detail_page(request: Request, session_id: int):
@@ -13183,7 +13642,7 @@ def _get_weekly_sessions(start_date: date, end_date: date):
         LEFT JOIN schools sc ON sc.id = sp.school_id
         LEFT JOIN teachers t ON t.id = sp.teacher_id
         WHERE ss.session_date BETWEEN ? AND ?
-          AND ss.status <> '取消'
+          AND ss.status NOT IN ('取消', '取消待補')
           AND sp.is_active = 1
         ORDER BY ss.session_date, ss.start_time, sc.name, sp.program_name
         """,
@@ -13199,14 +13658,14 @@ def _get_session_summary():
     cursor = conn.cursor()
     today = datetime.now().date().isoformat()
     cursor.execute(
-        "SELECT COUNT(*) FROM school_sessions WHERE session_date = ? AND status <> '取消'",
+        "SELECT COUNT(*) FROM school_sessions WHERE session_date = ? AND status NOT IN ('取消', '取消待補')",
         (today,),
     )
     today_count = cursor.fetchone()[0] or 0
     monday = datetime.now().date() - timedelta(days=datetime.now().weekday())
     sunday = monday + timedelta(days=6)
     cursor.execute(
-        "SELECT COUNT(*) FROM school_sessions WHERE session_date BETWEEN ? AND ? AND status <> '取消'",
+        "SELECT COUNT(*) FROM school_sessions WHERE session_date BETWEEN ? AND ? AND status NOT IN ('取消', '取消待補')",
         (monday.isoformat(), sunday.isoformat()),
     )
     week_count = cursor.fetchone()[0] or 0
