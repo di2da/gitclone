@@ -5045,7 +5045,7 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
                         <td style="padding:8px 6px;font-size:13px;">{html.escape((s['program_name'] or '').strip())}</td>
                         <td style="padding:8px 6px;font-size:13px;">{html.escape((s['teacher_name'] or '').strip())}</td>
                         <td style="padding:8px 6px;font-size:13px;">
-                            <form method="post" action="/calendar/session/{s['id']}/status" style="display:inline;">
+                            <form method="post" action="/calendar/session/{s['id']}/status" style="display:inline;" onclick="event.stopPropagation()">
                                 {csrf_html}
                                 <input type="hidden" name="redirect_view" value="week">
                                 <input type="hidden" name="week_offset" value="{week_offset}">
