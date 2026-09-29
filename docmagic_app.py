@@ -5933,7 +5933,20 @@ def _render_session_detail_page(request: Request, session_id: int):
             ss.session_type, ss.status, ss.note, ss.created_at, ss.updated_at,
             sp.program_name, sp.weekday, sp.default_start_time, sp.default_end_time,
             sp.teacher_id, sp.teacher_name_snapshot,
-            sc.name AS school_name, sc.contact_person, sc.contact_phone,
+            sc.name AS school_name,
+            (
+                SELECT contact.name FROM school_contacts contact
+                WHERE contact.school_id=sc.id AND contact.is_active=1
+                ORDER BY contact.is_primary DESC, contact.sort_order, contact.id
+                LIMIT 1
+            ) AS contact_person,
+            (
+                SELECT COALESCE(NULLIF(contact.phone, ''), NULLIF(contact.whatsapp, ''), contact.email)
+                FROM school_contacts contact
+                WHERE contact.school_id=sc.id AND contact.is_active=1
+                ORDER BY contact.is_primary DESC, contact.sort_order, contact.id
+                LIMIT 1
+            ) AS contact_phone,
             t.name AS teacher_name, t.phone AS teacher_phone, t.email AS teacher_email
         FROM school_sessions ss
         JOIN school_programs sp ON sp.id = ss.program_id
