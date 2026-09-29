@@ -4896,6 +4896,9 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
             if d not in sessions_by_date:
                 sessions_by_date[d] = []
             sessions_by_date[d].append(r)
+        current_month_session_count = sum(
+            1 for row in rows if first_day.isoformat() <= row["session_date"] <= last_day.isoformat()
+        )
         
         # Build calendar grid
         week_rows = []
@@ -4963,7 +4966,7 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
                     <strong>{month_name}</strong>
                     <a href="/calendar?view=month&month_offset={next_month}{f'&school={html.escape(school_filter, quote=True)}' if school_filter else ''}{f'&teacher={html.escape(teacher_filter, quote=True)}' if teacher_filter else ''}{f'&status={html.escape(status_filter, quote=True)}' if status_filter else ''}{f'&type={html.escape(type_filter, quote=True)}' if type_filter else ''}">下月 →</a>
                     <a href="/calendar?view=week" class="primary">週視圖</a>
-                    <span style="margin-left:auto;font-size:13px;color:var(--muted);">本月共 {len(rows)} 堂</span>
+                    <span style="margin-left:auto;font-size:13px;color:var(--muted);">本月共 {current_month_session_count} 堂</span>
                 </div>
                 <form method="get" action="/calendar" class="filter-bar">
                     <input type="hidden" name="view" value="month">
