@@ -17,6 +17,7 @@ import hmac
 import unicodedata
 import zipfile
 import time
+import threading
 from xml.sax.saxutils import escape as xml_escape
 from fastapi import FastAPI, Form, File, UploadFile, Response, Request, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
@@ -117,6 +118,14 @@ async def _security_gate_middleware(request: Request, call_next):
     request.state.request_id = _request_id()
     method = request.method.upper()
     unsafe_method = method in {"POST", "PUT", "PATCH", "DELETE"}
+
+    if DB_IS_EPHEMERAL and BLOB_READ_WRITE_TOKEN and request.url.path not in {
+        "/favicon.ico", "/logo.png", "/signature.png", "/stamp.png"
+    }:
+        with BLOB_DB_LOCK:
+            restored = _restore_blob_database_if_available(DB_PATH)
+        if unsafe_method and not restored:
+            return Response("未能取得最新資料，操作已停止，請稍後再試。", status_code=503)
 
     if unsafe_method:
         if request.url.path == "/api/db/query":
@@ -2047,6 +2056,7 @@ DB_IS_EPHEMERAL = str(DB_PATH).startswith("/tmp/")
 BLOB_READ_WRITE_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN", "").strip()
 BLOB_STORE_ID = os.environ.get("BLOB_STORE_ID", "").strip()
 BLOB_DB_PATHNAME = os.environ.get("DOCMAGIC_BLOB_PATHNAME", "docmagic/docmagic.db").strip().lstrip("/")
+BLOB_DB_LOCK = threading.RLock()
 
 
 def _blob_normalized_store_id():
@@ -2123,7 +2133,8 @@ def _persist_blob_database():
     if not store_id or not _sqlite_database_is_valid(database_path):
         return False
     try:
-        payload = database_path.read_bytes()
+        with BLOB_DB_LOCK:
+            payload = database_path.read_bytes()
         params = urlencode({"pathname": BLOB_DB_PATHNAME})
         request_id = f"{store_id}:{int(time.time() * 1000)}:{secrets.token_hex(8)}"
         request = urllib.request.Request(
