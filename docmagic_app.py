@@ -46,7 +46,7 @@ try:
     from reportlab.pdfgen import canvas
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.platypus import HRFlowable, Image as RLImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import HRFlowable, Image as RLImage, KeepInFrame, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
     REPORTLAB_AVAILABLE = True
 except Exception:
     REPORTLAB_AVAILABLE = False
@@ -2935,7 +2935,16 @@ def _build_pdf_reportlab(doc_type, client_name, project_name, items_list, date_s
     story.append(Spacer(1, 18 * mm))
     story.append(signature_box)
 
-    doc.build(story)
+    usable_height = A4[1] - doc.topMargin - doc.bottomMargin
+    one_page_story = KeepInFrame(
+        usable_width,
+        usable_height,
+        story,
+        mode="shrink",
+        hAlign="LEFT",
+        vAlign="TOP",
+    )
+    doc.build([one_page_story])
     return buffer.getvalue()
 
 
@@ -3158,15 +3167,15 @@ def _build_pdf_pil(doc_type, client_name, project_name, items_list, date_str, do
 
 
 def _generate_pdf_modern(doc_type, client_name, project_name, items_list, date_str, doc_no, with_sign=True, custom_remarks=None):
-    try:
-        return _build_pdf_html(doc_type, client_name, project_name, items_list, date_str, doc_no, with_sign, custom_remarks)
-    except Exception:
-        pass
     if REPORTLAB_AVAILABLE:
         try:
             return _build_pdf_reportlab(doc_type, client_name, project_name, items_list, date_str, doc_no, with_sign, custom_remarks)
         except Exception:
             pass
+    try:
+        return _build_pdf_html(doc_type, client_name, project_name, items_list, date_str, doc_no, with_sign, custom_remarks)
+    except Exception:
+        pass
     return _build_pdf_pil(doc_type, client_name, project_name, items_list, date_str, doc_no, with_sign, custom_remarks)
 
 
