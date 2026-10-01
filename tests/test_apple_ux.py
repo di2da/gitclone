@@ -54,6 +54,13 @@ class AppleUxTests(unittest.TestCase):
         self.assertIn("<optgroup", source)
         self.assertIn(".client-picker {{ display: none; }}", source)
 
+    def test_common_client_admin_has_simple_mobile_manager(self):
+        source = inspect.getsource(docmagic_app._render_common_clients_page)
+        self.assertIn("mobile-client-manage-select", source)
+        self.assertIn("mobile-client-detail", source)
+        self.assertIn("desktop-client-manager", source)
+        self.assertIn("mobile-add-toggle", source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9834,12 +9834,34 @@ def _render_common_clients_page(request: Request, notice: str = ""):
             .actions a.chip {{ display:inline-flex; align-items:center; justify-content:center; text-decoration:none; white-space:nowrap; }}
             .actions button {{ width:100%; }}
             @media (max-width: 700px) {{ .actions > * {{ min-width: 0; flex-basis: 100%; }} }}
+            .mobile-add-toggle, .mobile-client-manager {{ display:none; }}
             .filters {{ margin: 14px 0 6px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }}
             .chip {{ border:1px solid #d1d5db; background:#fff; color:#111; border-radius:999px; padding:8px 12px; cursor:pointer; }}
             .chip.active {{ background:#111; color:#fff; border-color:#111; }}
             .chip.ghost {{ background:transparent; }}
             .filter-select {{ min-width: 180px; }}
             @media (max-width: 900px) {{ .grid {{ grid-template-columns: 1fr; }} }}
+            @media (max-width: 700px) {{
+                body {{ padding:14px; background:#FAFAFA; }}
+                .topbar {{ padding:16px; border-radius:18px; }}
+                .topbar > div:last-child {{ display:flex; gap:6px; }}
+                .topbar a {{ min-height:44px; display:inline-flex; align-items:center; padding:9px 12px; font-size:12px; }}
+                .card {{ padding:16px; border-radius:18px; box-shadow:0 1px 4px rgba(0,0,0,.05); }}
+                .card > h2, .card > p.muted {{ display:none; }}
+                .mobile-add-toggle {{ display:flex; width:100%; min-height:48px; align-items:center; justify-content:space-between; margin-bottom:12px; background:#111; }}
+                .client-create-panel {{ display:none; padding:14px; margin-bottom:16px; border:1px solid #e5e7eb; border-radius:16px; background:#FAFAFA; }}
+                .client-create-panel.open {{ display:block; }}
+                .mobile-client-manager {{ display:grid; gap:12px; }}
+                .mobile-client-manager select {{ min-height:52px; font-size:16px; font-weight:650; }}
+                .mobile-client-detail {{ min-height:110px; padding:16px; border:1px solid #e5e7eb; border-radius:16px; background:#fff; }}
+                .mobile-client-detail.empty {{ display:grid; place-items:center; color:#86868B; text-align:center; }}
+                .mobile-client-detail h3 {{ margin:0 0 8px; font-size:19px; }}
+                .mobile-client-detail p {{ margin:5px 0; color:#6b7280; font-size:13px; line-height:1.5; }}
+                .mobile-client-meta {{ display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 14px; }}
+                .mobile-client-meta span {{ padding:5px 8px; border-radius:999px; background:#F2F2F7; color:#636366; font-size:11px; font-weight:700; }}
+                .mobile-client-delete {{ width:100%; min-height:44px; background:#fff; color:#FF453A; border-color:rgba(255,69,58,.25); }}
+                .desktop-client-manager {{ display:none; }}
+            }}
         </style>
         {csrf_script}
         <script>
@@ -10037,7 +10059,53 @@ def _render_common_clients_page(request: Request, notice: str = ""):
             }}
 
             function hydrateCommonClients() {{
-                renderCommonClientsTable(getCommonClientStore());
+                const store = getCommonClientStore();
+                renderCommonClientsTable(store);
+                renderMobileClientManager(store);
+            }}
+
+            function renderMobileClientManager(clients) {{
+                const select = document.getElementById('mobile-client-manage-select');
+                const detail = document.getElementById('mobile-client-detail');
+                if (!select || !detail) return;
+                const rows = Array.isArray(clients) ? clients.map(normalizeCommonClient).filter(Boolean) : [];
+                const previous = select.value;
+                const grouped = new Map();
+                rows.forEach((client) => {{
+                    const category = String(client.category || '').trim() || '未分類 / 其他';
+                    if (!grouped.has(category)) grouped.set(category, []);
+                    grouped.get(category).push(client);
+                }});
+                const categories = [...grouped.keys()].sort((a, b) => {{
+                    const ai = CATEGORY_ORDER.includes(a) ? CATEGORY_ORDER.indexOf(a) : 99;
+                    const bi = CATEGORY_ORDER.includes(b) ? CATEGORY_ORDER.indexOf(b) : 99;
+                    return ai - bi || a.localeCompare(b, 'zh-HK');
+                }});
+                select.innerHTML = '<option value="">— 選擇常用客戶 —</option>' + categories.map((category) => {{
+                    const options = (grouped.get(category) || []).sort((a, b) => a.name.localeCompare(b.name, 'zh-HK')).map((client) => `<option value="${{escapeHtml(String(client.id ?? client.name))}}">${{escapeHtml(client.name)}}</option>`).join('');
+                    return `<optgroup label="${{escapeHtml(category)}}">${{options}}</optgroup>`;
+                }}).join('');
+                if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+                const show = () => {{
+                    const client = rows.find((item) => String(item.id ?? item.name) === select.value);
+                    if (!client) {{
+                        detail.className = 'mobile-client-detail empty';
+                        detail.innerHTML = '請先喺上面揀一個常用客戶';
+                        return;
+                    }}
+                    detail.className = 'mobile-client-detail';
+                    detail.innerHTML = `<h3>${{escapeHtml(client.name)}}</h3><p>${{escapeHtml(client.client_name || '')}}</p>${{client.project_name ? `<p>${{escapeHtml(client.project_name)}}</p>` : ''}}<div class="mobile-client-meta"><span>${{escapeHtml(client.category || '未分類')}}</span><span>${{escapeHtml(client.doc_type || '報價單')}}</span></div>${{client.notes ? `<p>${{escapeHtml(client.notes)}}</p>` : ''}}<button type="button" class="mobile-client-delete">刪除此客戶</button>`;
+                    detail.querySelector('.mobile-client-delete')?.addEventListener('click', async () => {{
+                        if (!confirm(`確定刪除「${{client.name}}」？`)) return;
+                        const id = String(client.id ?? client.name);
+                        const res = await fetch(`/api/common-clients/${{encodeURIComponent(id)}}`, {{method:'DELETE',credentials:'same-origin'}});
+                        if (!res.ok) {{ alert('刪除失敗，請再試一次。'); return; }}
+                        removeCommonClientLocal(id);
+                        window.location.reload();
+                    }});
+                }};
+                select.onchange = show;
+                show();
             }}
 
             function renderCategoryChips(clients) {{
@@ -10134,6 +10202,8 @@ def _render_common_clients_page(request: Request, notice: str = ""):
                 <p class="muted">用嚟快速帶入客戶名稱、項目名稱同文件類型。常用客戶可同草稿共存，方便重複出單。</p>
                 {count_html}
                 {notice_html}
+                <button type="button" class="mobile-add-toggle" onclick="document.getElementById('common-client-create-panel').classList.toggle('open')"><span>＋ 新增常用客戶</span><span>⌄</span></button>
+                <div id="common-client-create-panel" class="client-create-panel">
                 <form id="common-client-form" action="/invoice/clients/save" method="post">
                     {csrf_html}
                     <div class="grid">
@@ -10165,6 +10235,13 @@ def _render_common_clients_page(request: Request, notice: str = ""):
                         <a href="/invoice/clients/export" class="chip ghost" style="text-decoration:none; display:inline-flex; align-items:center;">匯出 CSV</a>
                     </div>
                 </form>
+                </div>
+                <section class="mobile-client-manager">
+                    <label for="mobile-client-manage-select">選擇常用客戶</label>
+                    <select id="mobile-client-manage-select"><option value="">— 載入中 —</option></select>
+                    <div id="mobile-client-detail" class="mobile-client-detail empty">請先喺上面揀一個常用客戶</div>
+                </section>
+                <div class="desktop-client-manager">
                 <div class="filters">
                     <input id="client-search" type="text" placeholder="搜尋名稱 / 客戶 / 項目 / 備註" style="max-width:320px;">
                     <select id="category-filter" class="filter-select">
@@ -10181,6 +10258,7 @@ def _render_common_clients_page(request: Request, notice: str = ""):
                     <thead><tr><th>名稱</th><th>客戶</th><th>項目</th><th>文件類型</th><th>分類</th><th>備註</th><th>更新</th><th>操作</th></tr></thead>
                     <tbody id="common-clients-body">{rows_html}</tbody>
                 </table>
+                </div>
             </div>
         </div>
     </body>
