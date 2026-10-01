@@ -127,6 +127,22 @@ async def _security_gate_middleware(request: Request, call_next):
         if unsafe_method and not restored:
             return Response("未能取得最新資料，操作已停止，請稍後再試。", status_code=503)
 
+    if request.url.path.startswith("/salary"):
+        salary_user = _current_user_record(request)
+        if not salary_user:
+            return RedirectResponse("/", status_code=303)
+        if _normalize_role(salary_user[3]) not in {"admin", "finance"}:
+            _audit_action_request(
+                request,
+                "permission_denied",
+                target_type="route",
+                target_id=request.url.path,
+                result="denied",
+                actor=salary_user,
+                metadata={"required_roles": ["admin", "finance"]},
+            )
+            return HTMLResponse(_render_admin_only_page(request, "薪酬管理"), status_code=403)
+
     if unsafe_method:
         if request.url.path == "/api/db/query":
             service_actor = _service_auth_from_request(request)
@@ -3603,6 +3619,12 @@ def _current_user_record(request: Request):
     return row
 
 
+def _render_admin_only_page(request: Request, feature_name: str = "此功能"):
+    display_name = _current_display_name(request)
+    return f"""<!doctype html><html lang="zh-HK"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(feature_name)} · {APP_NAME}</title>
+    <style>:root{{--bg:#FAFAFA;--ink:#1D1D1F;--muted:#86868B;--gold:#B8934A;--line:rgba(29,29,31,.09)}}*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif}}main{{width:min(100%,520px);padding:34px;border:1px solid var(--line);border-radius:20px;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.06);text-align:center}}.icon{{width:58px;height:58px;display:grid;place-items:center;margin:0 auto 20px;border-radius:18px;background:#FBF5E8;color:var(--gold);font-size:26px;font-weight:800}}h1{{margin:0 0 10px;font-size:26px;letter-spacing:-.4px}}p{{margin:0;color:var(--muted);font-size:15px;line-height:1.6}}a{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;margin-top:24px;padding:0 18px;border-radius:999px;background:#1D1D1F;color:#fff;text-decoration:none;font-size:14px;font-weight:650}}</style></head><body><main><div class="icon">鎖</div><h1>只限 Admin 使用</h1><p>{html.escape(display_name)}，你目前嘅帳戶未有權限進入「{html.escape(feature_name)}」。</p><a href="/dashboard">返回主頁</a></main></body></html>"""
+
+
 def _require_admin(request: Request):
     user = _current_user_record(request)
     if not user:
@@ -4334,9 +4356,9 @@ def _render_dashboard_page(request: Request):
                     <div class="links">
                         <a class="link" href="/class-control"><strong>課堂控制台</strong><span>今日／本週安排、每月核堂、導師代課、補堂及加堂。</span></a>
                         {f'<a class="link" href="/salary/teachers"><strong>導師列表</strong><span>查看各導師班數、狀態與薪酬詳情。</span></a>' if user and _normalize_role(user[3]) == "admin" else ''}
-                        <a class="link" href="/salary/classes"><strong>班別列表</strong><span>整理學校、星期、導師同時薪資料。</span></a>
+                        {f'<a class="link" href="/salary/classes"><strong>班別列表</strong><span>整理學校、星期、導師同時薪資料。</span></a>' if user and _normalize_role(user[3]) in {"admin", "finance"} else ''}
                         <a class="link" href="/attendance"><strong>學生點名系統</strong><span>記錄各地區課堂出席、缺席同原因。</span></a>
-                        <a class="link" href="/salary"><strong>薪酬管理</strong><span>查看薪酬總覽、匯入資料與計算記錄。</span></a>
+                        {f'<a class="link" href="/salary"><strong>薪酬管理</strong><span>查看薪酬總覽、匯入資料與計算記錄。</span></a>' if user and _normalize_role(user[3]) in {"admin", "finance"} else '<div class="link" style="opacity:.55; pointer-events:none;"><strong>薪酬管理</strong><span>只限 Admin 使用。</span></div>'}
                         <a class="link" href="/calendar"><strong>學校校曆</strong><span>查看本週／本月學校課堂時間表與篩選。</span></a>
                         <a class="link" href="/school-monitor"><strong>學校月報</strong><span>各校課堂統計、完成率、導師出勤與衝突警示。</span></a>
                         <a class="link" href="/announcements"><strong>軍團公告</strong><span>查看最新通知、時間表同內部消息。</span></a>
@@ -5252,7 +5274,7 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
           <style>
             .filter-toggle{{display:none}}.month-cell{{font:inherit;color:var(--ink);text-align:left;cursor:pointer}}.class-count,.calendar-alert{{display:none}}.mobile-agenda{{display:none}}
             .period-tools{{display:flex;align-items:center;gap:10px}}.density-toggle{{display:flex;padding:3px;border-radius:10px;background:#E8E8ED}}.density-toggle button{{min-width:52px;min-height:36px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer}}.density-toggle button.active{{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.12)}}
-            .calendar-compact .month-grid,.calendar-compact .weekday-row{{grid-template-columns:repeat(7,minmax(0,1fr))}}.calendar-compact .month-cell{{display:flex;min-width:0;min-height:76px;padding:8px;flex-direction:column;align-items:flex-start;justify-content:space-between;overflow:hidden}}.calendar-compact .month-cell.heat-1{{background:#F3F8FF}}.calendar-compact .month-cell.heat-2{{background:#E0EEFF}}.calendar-compact .month-cell.heat-3{{background:#C8E0FF}}.calendar-compact .month-chips,.calendar-compact .density{{display:none}}.calendar-compact .class-count{{display:inline-flex;max-width:100%;align-items:center;min-height:20px;padding:2px 6px;border-radius:999px;background:rgba(255,255,255,.82);color:#075EA8;font-size:10px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}}.calendar-compact .month-cell.selected .class-count{{color:#8B6725}}.calendar-compact .calendar-alert{{display:block;position:absolute;top:8px;right:7px;width:7px;height:7px;border-radius:50%}}.calendar-compact .mobile-agenda{{display:block;margin-top:24px}}.calendar-alert.attention{{background:#FF9F0A}}.calendar-alert.cancelled{{background:#FF453A}}.month-cell.selected{{background:#FBF5E8!important;box-shadow:0 0 0 2px var(--gold) inset!important}}
+            .calendar-compact .month-grid,.calendar-compact .weekday-row{{grid-template-columns:repeat(7,minmax(0,1fr))}}.calendar-compact .month-cell{{display:flex;min-width:0;min-height:76px;padding:8px;flex-direction:column;align-items:flex-start;justify-content:space-between;overflow:hidden}}.calendar-compact .month-cell.heat-1{{background:#F3F8FF}}.calendar-compact .month-cell.heat-2{{background:#E0EEFF}}.calendar-compact .month-cell.heat-3{{background:#C8E0FF}}.calendar-compact .month-chips,.calendar-compact .density{{display:none}}.calendar-compact .class-count{{display:inline-flex;max-width:100%;align-items:center;min-height:20px;padding:2px 6px;border-radius:999px;background:rgba(255,255,255,.82);color:#075EA8;font-size:10px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}}.calendar-compact .month-cell.selected .class-count{{color:#8B6725}}.calendar-compact .calendar-alert{{display:block;position:absolute;top:8px;right:7px;width:7px;height:7px;border-radius:50%}}.calendar-compact .mobile-agenda,.calendar-detailed .mobile-agenda{{display:block;margin-top:24px}}.calendar-alert.attention{{background:#FF9F0A}}.calendar-alert.cancelled{{background:#FF453A}}.month-cell.selected{{background:#FBF5E8!important;box-shadow:0 0 0 2px var(--gold) inset!important}}
             .agenda-panel{{display:none}}.agenda-panel.active{{display:block}}.agenda-panel h3{{margin:0 0 12px;font-size:20px}}.agenda-panel p{{padding:20px;text-align:center;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:16px}}.agenda-row{{display:grid;grid-template-columns:72px minmax(0,1fr) 10px;align-items:center;gap:14px;min-height:70px;margin-bottom:8px;padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:#fff;color:var(--ink);text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.04)}}.agenda-row time{{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}}.agenda-row span{{display:grid;gap:3px;min-width:0}}.agenda-row strong,.agenda-row small{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.agenda-row strong{{font-size:15px}}.agenda-row small{{color:var(--muted);font-size:12px}}.agenda-row i{{width:10px;height:10px;border-radius:50%}}
             @media(max-width:700px){{
               .filter-toggle{{display:flex;width:100%;min-height:48px;align-items:center;justify-content:space-between;margin:0 0 12px;padding:0 16px;border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);font-size:14px;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.04)}}
@@ -5267,7 +5289,7 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
           {filters_html('month','month_offset',month_offset)}
           <div class="weekday-row">{''.join(f'<span>{label}</span>' for label in ['日','一','二','三','四','五','六'])}</div><div class="month-grid">{''.join(cells)}</div>
           <section class="mobile-agenda">{''.join(agenda_panels)}</section>
-          <script>(()=>{{const cells=[...document.querySelectorAll('.month-cell')],panels=[...document.querySelectorAll('.agenda-panel')],buttons=[...document.querySelectorAll('[data-density]')],agenda=document.querySelector('.mobile-agenda');function pick(date,bringIntoView=false){{cells.forEach(cell=>cell.classList.toggle('selected',cell.dataset.date===date));panels.forEach(panel=>panel.classList.toggle('active',panel.dataset.agenda===date));if(bringIntoView&&document.body.classList.contains('calendar-compact')) requestAnimationFrame(()=>agenda?.scrollIntoView({{behavior:'smooth',block:'nearest'}}));}}function density(mode,persist=true){{const next=mode==='detailed'?'detailed':'compact';document.body.classList.toggle('calendar-compact',next==='compact');document.body.classList.toggle('calendar-detailed',next==='detailed');buttons.forEach(button=>button.classList.toggle('active',button.dataset.density===next));if(persist) localStorage.setItem('dk_calendar_month_density',next);}}cells.forEach(cell=>cell.addEventListener('click',()=>pick(cell.dataset.date,true)));buttons.forEach(button=>button.addEventListener('click',()=>density(button.dataset.density)));const saved=localStorage.getItem('dk_calendar_month_density');density(saved|| (window.matchMedia('(max-width:700px)').matches?'compact':'detailed'),false);pick('{default_date.isoformat()}');}})();</script>"""
+          <script>(()=>{{const cells=[...document.querySelectorAll('.month-cell')],panels=[...document.querySelectorAll('.agenda-panel')],buttons=[...document.querySelectorAll('[data-density]')],agenda=document.querySelector('.mobile-agenda');function pick(date,bringIntoView=false){{cells.forEach(cell=>cell.classList.toggle('selected',cell.dataset.date===date));panels.forEach(panel=>panel.classList.toggle('active',panel.dataset.agenda===date));if(bringIntoView) requestAnimationFrame(()=>agenda?.scrollIntoView({{behavior:'smooth',block:'nearest'}}));}}function density(mode,persist=true){{const next=mode==='detailed'?'detailed':'compact';document.body.classList.toggle('calendar-compact',next==='compact');document.body.classList.toggle('calendar-detailed',next==='detailed');buttons.forEach(button=>button.classList.toggle('active',button.dataset.density===next));if(persist) localStorage.setItem('dk_calendar_month_density',next);}}cells.forEach(cell=>cell.addEventListener('click',()=>pick(cell.dataset.date,true)));buttons.forEach(button=>button.addEventListener('click',()=>density(button.dataset.density)));const saved=localStorage.getItem('dk_calendar_month_density');density(saved|| (window.matchMedia('(max-width:700px)').matches?'compact':'detailed'),false);pick('{default_date.isoformat()}');}})();</script>"""
         total_label = f"本月共 {current_month_session_count} 堂"
     else:
         base = today + timedelta(weeks=week_offset)

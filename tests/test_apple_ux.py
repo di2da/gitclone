@@ -44,9 +44,19 @@ class AppleUxTests(unittest.TestCase):
         self.assertIn("data-density", source)
         self.assertIn("dk_calendar_month_density", source)
         self.assertIn(".calendar-compact .mobile-agenda", source)
+        self.assertIn(".calendar-detailed .mobile-agenda", source)
         self.assertIn(".agenda-panel{{display:none}}", source)
         self.assertIn(".agenda-panel.active{{display:block}}", source)
         self.assertIn("scrollIntoView", source)
+
+    def test_salary_access_has_friendly_restricted_page(self):
+        middleware_source = inspect.getsource(docmagic_app._security_gate_middleware)
+        restricted_source = inspect.getsource(docmagic_app._render_admin_only_page)
+        modules_source = inspect.getsource(docmagic_app._render_dashboard_page)
+        self.assertIn('request.url.path.startswith("/salary")', middleware_source)
+        self.assertIn("只限 Admin 使用", restricted_source)
+        self.assertIn("返回主頁", restricted_source)
+        self.assertIn("只限 Admin 使用。", modules_source)
 
     def test_login_uses_light_theme(self):
         html = docmagic_app._render_login_page()
