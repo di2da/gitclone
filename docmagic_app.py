@@ -5199,7 +5199,9 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
         return "".join(f'<option value="{html.escape(item, quote=True)}"{" selected" if item == current else ""}>{html.escape(item)}</option>' for item in items)
 
     def filters_html(current_view, offset_name, offset):
+        active_filter_count = sum(bool(value) for value in selected.values())
         return f"""
+        <button type="button" class="filter-toggle" onclick="this.nextElementSibling.classList.toggle('open');this.setAttribute('aria-expanded',this.nextElementSibling.classList.contains('open'))" aria-expanded="false"><span>篩選{f' · {active_filter_count}' if active_filter_count else ''}</span><span>⌄</span></button>
         <form method="get" action="/calendar" class="filter-bar">
           <input type="hidden" name="view" value="{current_view}"><input type="hidden" name="{offset_name}" value="{offset}">
           <select name="school" onchange="this.form.submit()"><option value="">全部學校</option>{option_list(filter_options['schools'],school_filter)}</select>
@@ -5218,7 +5220,8 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
         grouped = {}
         for row in rows:
             grouped.setdefault(row["session_date"], []).append(row)
-        cells, cursor_date = [], start
+        default_date = today if first_day <= today <= last_day else next((datetime.strptime(row["session_date"], "%Y-%m-%d").date() for row in rows if first_day.isoformat() <= row["session_date"] <= last_day.isoformat()), first_day)
+        cells, agenda_panels, cursor_date = [], [], start
         while cursor_date <= end:
             lessons = grouped.get(cursor_date.isoformat(), [])
             chips = []
@@ -5228,13 +5231,32 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
             dots = "".join('<i></i>' for _ in lessons[:3])
             more = f'<span class="more-count">+{len(lessons)-3}</span>' if len(lessons) > 3 else ""
             classes = "month-cell" + (" today" if cursor_date == today else "") + (" outside" if cursor_date.month != month else "")
-            cells.append(f'<div class="{classes}"><span class="date-number">{cursor_date.day}</span><div class="month-chips">{"".join(chips)}</div><div class="density">{dots}{more}</div></div>')
+            cells.append(f'<button type="button" class="{classes}" data-date="{cursor_date.isoformat()}" aria-label="{cursor_date.month}月{cursor_date.day}日，{len(lessons)}堂"><span class="date-number">{cursor_date.day}</span><div class="month-chips">{"".join(chips)}</div><div class="density">{dots}{more}</div></button>')
+            if first_day <= cursor_date <= last_day:
+                agenda_rows = []
+                for lesson in lessons:
+                    color, _ = _apple_status(lesson["status"])
+                    agenda_rows.append(f'<a class="agenda-row" href="/calendar/session/{lesson["id"]}"><time>{html.escape((lesson["start_time"] or "待定")[:5])}</time><span><strong>{html.escape(lesson["school_name"] or "-")}</strong><small>{html.escape(lesson["program_name"] or "-")} · {html.escape(lesson["teacher_name"] or "未配對導師")}</small></span><i style="background:{color}"></i></a>')
+                agenda_panels.append(f'<div class="agenda-panel{" active" if cursor_date == default_date else ""}" data-agenda="{cursor_date.isoformat()}"><h3>{_human_date_label(cursor_date, today)} · {cursor_date.month}月{cursor_date.day}日</h3>{"".join(agenda_rows) if agenda_rows else "<p>當日冇課堂。</p>"}</div>')
             cursor_date += timedelta(days=1)
         current_month_session_count = sum(1 for row in rows if first_day.isoformat() <= row["session_date"] <= last_day.isoformat())
         content = f"""
+          <style>
+            .filter-toggle{{display:none}}.month-cell{{font:inherit;color:var(--ink);text-align:left;cursor:pointer}}.mobile-agenda{{display:none}}
+            @media(max-width:700px){{
+              .filter-toggle{{display:flex;width:100%;min-height:48px;align-items:center;justify-content:space-between;margin:0 0 12px;padding:0 16px;border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);font-size:14px;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.04)}}
+              .filter-bar{{display:none;grid-template-columns:1fr 1fr;overflow:visible}}.filter-bar.open{{display:grid}}.filter-bar select{{min-width:0;width:100%;max-width:none}}.clear-filter{{justify-content:center}}
+              .month-cell{{min-height:60px;padding:8px;box-shadow:none}}.month-cell:hover{{transform:none}}.month-cell.selected{{background:#FBF5E8;box-shadow:0 0 0 2px var(--gold) inset}}.month-cell.today:not(.selected){{box-shadow:0 0 0 1.5px var(--gold) inset}}
+              .month-chips{{display:none}}.density{{position:static;justify-content:center;margin-top:9px}}.density i{{width:5px;height:5px}}.more-count{{font-size:9px}}
+              .mobile-agenda{{display:block;margin-top:24px}}.agenda-panel{{display:none}}.agenda-panel.active{{display:block}}.agenda-panel h3{{margin:0 0 12px;font-size:18px}}.agenda-panel p{{padding:20px;text-align:center;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:16px}}
+              .agenda-row{{display:grid;grid-template-columns:54px minmax(0,1fr) 10px;align-items:center;gap:12px;min-height:66px;margin-bottom:8px;padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:#fff;color:var(--ink);text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.04)}}.agenda-row time{{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}}.agenda-row span{{display:grid;gap:3px;min-width:0}}.agenda-row strong,.agenda-row small{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.agenda-row strong{{font-size:14px}}.agenda-row small{{color:var(--muted);font-size:12px}}.agenda-row i{{width:10px;height:10px;border-radius:50%}}
+            }}
+          </style>
           <div class="period-head"><div><span class="period-kicker">月視圖</span><h2>{year}年{month}月</h2></div><div class="period-nav"><a aria-label="上月" href="/calendar?view=month&month_offset={month_offset-1}&{keep_query()}">‹</a><a aria-label="下月" href="/calendar?view=month&month_offset={month_offset+1}&{keep_query()}">›</a></div></div>
           {filters_html('month','month_offset',month_offset)}
-          <div class="weekday-row">{''.join(f'<span>{label}</span>' for label in ['日','一','二','三','四','五','六'])}</div><div class="month-grid">{''.join(cells)}</div>"""
+          <div class="weekday-row">{''.join(f'<span>{label}</span>' for label in ['日','一','二','三','四','五','六'])}</div><div class="month-grid">{''.join(cells)}</div>
+          <section class="mobile-agenda">{''.join(agenda_panels)}</section>
+          <script>(()=>{{const cells=[...document.querySelectorAll('.month-cell')],panels=[...document.querySelectorAll('.agenda-panel')];function pick(date){{cells.forEach(cell=>cell.classList.toggle('selected',cell.dataset.date===date));panels.forEach(panel=>panel.classList.toggle('active',panel.dataset.agenda===date));}}cells.forEach(cell=>cell.addEventListener('click',()=>pick(cell.dataset.date)));pick('{default_date.isoformat()}');}})();</script>"""
         total_label = f"本月共 {current_month_session_count} 堂"
     else:
         base = today + timedelta(weeks=week_offset)
@@ -5254,6 +5276,7 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
                 </article>""")
             days.append(f'<section class="week-day{" today" if day == today else ""}"><header><span>{["一","二","三","四","五","六","日"][index]}</span><strong>{day.day}</strong></header><div class="week-lessons">{"".join(lesson_cards) if lesson_cards else "<span class=no-class>·</span>"}</div></section>')
         content = f"""
+          <style>.filter-toggle{{display:none}}@media(max-width:700px){{.filter-toggle{{display:flex;width:100%;min-height:48px;align-items:center;justify-content:space-between;margin:0 0 12px;padding:0 16px;border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);font-size:14px;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.04)}}.filter-bar{{display:none;grid-template-columns:1fr 1fr;overflow:visible}}.filter-bar.open{{display:grid}}.filter-bar select{{min-width:0;width:100%;max-width:none}}.clear-filter{{justify-content:center}}}}</style>
           <div class="period-head"><div><span class="period-kicker">週視圖 · {monday.month}/{monday.day} – {sunday.month}/{sunday.day}</span></div><div class="period-nav"><a aria-label="上週" href="/calendar?view=week&week_offset={week_offset-1}&{keep_query()}">‹</a><a aria-label="下週" href="/calendar?view=week&week_offset={week_offset+1}&{keep_query()}">›</a></div></div>
           {filters_html('week','week_offset',week_offset)}<div class="week-scroll"><div class="week-grid">{''.join(days)}</div></div>"""
         total_label = f"本週共 {len(rows)} 堂"
