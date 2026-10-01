@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import ipaddress
+import re
 import shutil
 import socket
 import subprocess
@@ -14,6 +15,7 @@ import tempfile
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 import zipfile
 
@@ -31,7 +33,13 @@ OMNIGET_YTDLP = Path(
         str(Path.home() / "Library" / "Application Support" / "wtf.tonho.omniget" / "bin" / "yt-dlp"),
     )
 )
-OPENCLAW_BIN = os.environ.get("OPENCLAW_BIN") or shutil.which("openclaw") or "/usr/local/bin/openclaw"
+VERCEL_BIN = os.environ.get("VERCEL_BIN") or shutil.which("vercel") or "/usr/local/bin/vercel"
+BLOB_TOKEN_FILE = Path(
+    os.environ.get(
+        "DOCMAGIC_MEDIA_BLOB_TOKEN_FILE",
+        str(Path.home() / ".openclaw" / "secrets" / "dk-media-blob-token"),
+    )
+)
 WORKER_ID = os.environ.get("DOCMAGIC_MEDIA_WORKER_ID", f"{socket.gethostname()}-{os.getpid()}")
 POLL_SECONDS = max(10, int(os.environ.get("DOCMAGIC_MEDIA_POLL_SECONDS", "30")))
 ONCE = os.environ.get("DOCMAGIC_MEDIA_WORKER_ONCE", "").strip() == "1"
@@ -82,9 +90,11 @@ def _post_json(path: str, payload: dict[str, Any], attempts: int = 1) -> dict[st
     raise RuntimeError(f"API request failed: {last_error}")
 
 
-def _run(command: list[str], timeout: int = 3600) -> subprocess.CompletedProcess[str]:
+def _run(command: list[str], timeout: int = 3600, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PATH"] = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    if extra_env:
+        env.update(extra_env)
     try:
         return subprocess.run(
             command,
@@ -147,7 +157,7 @@ def _download(job: dict[str, Any], folder: Path) -> tuple[Path, str]:
         raise RuntimeError(f"OmniGet did not produce a {wanted_suffix} file")
     output = max(candidates, key=lambda item: item.stat().st_mtime)
     if output.stat().st_size > MAX_OUTPUT_BYTES:
-        raise RuntimeError("輸出檔案超過 250 MB，未有傳送。")
+        raise RuntimeError("輸出檔案超過 250 MB，未能上載。")
     title = output.stem.rsplit(" [", 1)[0].strip() or output.stem
     return output, title
 
@@ -161,52 +171,71 @@ def _delivery_file(output: Path, output_format: str) -> Path:
     return archive
 
 
-def _find_message_id(value: Any) -> str:
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if key.lower() in {"messageid", "message_id", "id"} and isinstance(item, (str, int)):
-                return str(item)
-        for item in value.values():
-            found = _find_message_id(item)
-            if found:
-                return found
-    elif isinstance(value, list):
-        for item in value:
-            found = _find_message_id(item)
-            if found:
-                return found
-    return ""
+def _blob_token() -> str:
+    value = os.environ.get("BLOB_READ_WRITE_TOKEN", "").strip()
+    if value:
+        return value
+    try:
+        return BLOB_TOKEN_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
-def _send_whatsapp(phone: str, media_path: Path, title: str, output_format: str) -> str:
+def _upload_private_blob(job_token: str, media_path: Path) -> str:
     if DRY_RUN:
-        return "dry-run"
-    caption = f"DK 軍團媒體工具：{title}\n格式：{output_format.upper()}"
+        return f"media/{job_token}/{media_path.name}"
+    token = _blob_token()
+    if not token:
+        raise RuntimeError(f"Missing Blob token: {BLOB_TOKEN_FILE}")
+    pathname = f"media/{job_token}/{media_path.name}"
     result = _run(
         [
-            OPENCLAW_BIN,
-            "message",
-            "send",
-            "--account",
-            "default",
-            "--channel",
-            "whatsapp",
-            "--target",
-            phone,
-            "--message",
-            caption,
-            "--media",
+            VERCEL_BIN,
+            "blob",
+            "put",
             str(media_path),
-            "--force-document",
-            "--json",
+            "--access",
+            "private",
+            "--pathname",
+            pathname,
+            "--allow-overwrite",
+            "true",
+            "--multipart",
+            "true",
+            "--cache-control-max-age",
+            "0",
+            "--no-color",
         ],
-        timeout=300,
+        timeout=1800,
+        extra_env={"BLOB_READ_WRITE_TOKEN": token},
     )
-    try:
-        parsed = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        parsed = {}
-    return _find_message_id(parsed)
+    cli_output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    match = re.search(r"https://[^\s]+\.private\.blob\.vercel-storage\.com/[^\s]+", cli_output)
+    if not match:
+        raise RuntimeError("Vercel Blob upload completed without a pathname")
+    return unquote(urlparse(match.group(0)).path.lstrip("/"))
+
+
+def _delete_private_blob(pathname: str) -> None:
+    token = _blob_token()
+    if not token:
+        raise RuntimeError(f"Missing Blob token: {BLOB_TOKEN_FILE}")
+    _run(
+        [VERCEL_BIN, "blob", "del", pathname, "--no-color"],
+        timeout=300,
+        extra_env={"BLOB_READ_WRITE_TOKEN": token},
+    )
+
+
+def _cleanup_expired() -> None:
+    response = _post_json("/api/media/jobs/expired", {"worker_id": WORKER_ID})
+    for job in response.get("jobs") or []:
+        try:
+            _delete_private_blob(str(job["blob_pathname"]))
+            _post_json("/api/media/jobs/expired/confirm", {"job_id": int(job["id"])}, attempts=3)
+            print(f"expired job {job.get('id')} cleaned", flush=True)
+        except Exception as exc:
+            print(f"expired job {job.get('id')} cleanup failed: {exc}", flush=True)
 
 
 def _complete(job_token: str, payload: dict[str, Any]) -> None:
@@ -223,9 +252,7 @@ def _process(job: dict[str, Any]) -> None:
             folder = Path(raw_folder)
             output, title = _download(job, folder)
             delivery = _delivery_file(output, str(job["output_format"]))
-            message_id = _send_whatsapp(
-                str(job["delivery_phone"]), delivery, title, str(job["output_format"])
-            )
+            blob_pathname = _upload_private_blob(token, delivery)
             _complete(
                 token,
                 {
@@ -233,7 +260,7 @@ def _process(job: dict[str, Any]) -> None:
                     "source_title": title,
                     "output_name": delivery.name,
                     "output_size_bytes": delivery.stat().st_size,
-                    "delivery_message_id": message_id,
+                    "blob_pathname": blob_pathname,
                 },
             )
         print(f"completed job {job.get('id')}", flush=True)
@@ -252,6 +279,7 @@ def main() -> int:
         return 2
     while True:
         try:
+            _cleanup_expired()
             response = _post_json("/api/media/jobs/claim", {"worker_id": WORKER_ID})
             job = response.get("job")
             if job:

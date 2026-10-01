@@ -1,9 +1,13 @@
 import inspect
+import asyncio
+import sqlite3
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from starlette.requests import Request
+from fastapi import HTTPException
 
 import docmagic_app
 
@@ -43,14 +47,18 @@ class MediaToolsTests(unittest.TestCase):
         with patch.object(docmagic_app, "_current_user_record", return_value=tutor):
             self.assertEqual(dependency(self.request, credentials=None), tutor)
 
-    def test_worker_uses_omniget_engine_and_private_whatsapp(self):
+    def test_worker_uses_omniget_engine_and_private_blob(self):
         source = (Path(__file__).parents[1] / "scripts" / "media_worker.py").read_text(encoding="utf-8")
         self.assertIn("wtf.tonho.omniget", source)
-        self.assertIn('"--channel",\n            "whatsapp"', source)
-        self.assertIn('"--force-document"', source)
+        self.assertIn('"blob",\n            "put"', source)
+        self.assertIn('"private"', source)
+        self.assertIn('"--multipart"', source)
+        self.assertIn("dk-media-blob-token", source)
+        self.assertNotIn('"--channel",\n            "whatsapp"', source)
         self.assertIn("_ensure_public_host", source)
         self.assertIn('"media-worker-tmp"', source)
         self.assertIn('dir=str(WORK_ROOT)', source)
+        self.assertIn("_cleanup_expired", source)
 
     def test_worker_api_has_separate_bearer_gate(self):
         source = inspect.getsource(docmagic_app._security_gate_middleware)
@@ -63,6 +71,57 @@ class MediaToolsTests(unittest.TestCase):
         self.assertIn("重新處理", page_source)
         self.assertIn("requested_by=?", route_source)
         self.assertIn("status='failed'", route_source)
+
+    def test_completed_jobs_are_private_account_downloads(self):
+        page_source = inspect.getsource(docmagic_app._render_media_tools_page)
+        route_source = inspect.getsource(docmagic_app.media_tools_download_job)
+        self.assertIn("下載檔案", page_source)
+        self.assertNotIn("WhatsApp 收件設定", page_source)
+        self.assertIn("requested_by=?", route_source)
+        self.assertIn("BLOB_READ_WRITE_TOKEN", route_source)
+        self.assertIn("private, no-store", route_source)
+
+    def test_media_schema_tracks_blob_expiry_and_cleanup(self):
+        source = (Path(__file__).parents[1] / "docmagic_app.py").read_text(encoding="utf-8")
+        self.assertIn('(\"blob_pathname\", \"TEXT\")', source)
+        self.assertIn('(\"expires_at\", \"TEXT\")', source)
+        self.assertIn('(\"blob_deleted_at\", \"TEXT\")', source)
+
+    def test_download_route_rejects_another_accounts_job(self):
+        with tempfile.TemporaryDirectory() as folder:
+            database = Path(folder) / "media.db"
+            conn = sqlite3.connect(database)
+            conn.execute("""CREATE TABLE media_jobs (
+                id INTEGER PRIMARY KEY, requested_by TEXT, status TEXT,
+                output_name TEXT, blob_pathname TEXT, expires_at TEXT,
+                blob_deleted_at TEXT
+            )""")
+            conn.execute(
+                "INSERT INTO media_jobs VALUES (1,'owner','completed','file.zip','media/job/file.zip','2999-01-01 00:00:00',NULL)"
+            )
+            conn.commit(); conn.close()
+            with patch.object(docmagic_app, "DB_PATH", str(database)):
+                with self.assertRaises(HTTPException) as raised:
+                    asyncio.run(docmagic_app.media_tools_download_job(self.request, 1, (2, "other", "Other", "tutor")))
+            self.assertEqual(raised.exception.status_code, 404)
+
+    def test_download_route_rejects_expired_file_before_blob_fetch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            database = Path(folder) / "media.db"
+            conn = sqlite3.connect(database)
+            conn.execute("""CREATE TABLE media_jobs (
+                id INTEGER PRIMARY KEY, requested_by TEXT, status TEXT,
+                output_name TEXT, blob_pathname TEXT, expires_at TEXT,
+                blob_deleted_at TEXT
+            )""")
+            conn.execute(
+                "INSERT INTO media_jobs VALUES (1,'owner','completed','file.zip','media/job/file.zip','2000-01-01 00:00:00',NULL)"
+            )
+            conn.commit(); conn.close()
+            with patch.object(docmagic_app, "DB_PATH", str(database)):
+                with self.assertRaises(HTTPException) as raised:
+                    asyncio.run(docmagic_app.media_tools_download_job(self.request, 1, (1, "owner", "Owner", "tutor")))
+            self.assertEqual(raised.exception.status_code, 410)
 
 
 if __name__ == "__main__":
