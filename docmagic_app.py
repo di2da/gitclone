@@ -127,21 +127,25 @@ async def _security_gate_middleware(request: Request, call_next):
         if unsafe_method and not restored:
             return Response("未能取得最新資料，操作已停止，請稍後再試。", status_code=503)
 
-    if request.url.path.startswith("/salary"):
-        salary_user = _current_user_record(request)
-        if not salary_user:
+    restricted_feature = next(
+        ((prefix, label) for prefix, label in (("/salary", "薪酬管理"), ("/class-control", "課堂控制台")) if request.url.path.startswith(prefix)),
+        None,
+    )
+    if restricted_feature:
+        restricted_user = _current_user_record(request)
+        if not restricted_user:
             return RedirectResponse("/", status_code=303)
-        if _normalize_role(salary_user[3]) not in {"admin", "finance"}:
+        if _normalize_role(restricted_user[3]) not in {"admin", "finance"}:
             _audit_action_request(
                 request,
                 "permission_denied",
                 target_type="route",
                 target_id=request.url.path,
                 result="denied",
-                actor=salary_user,
+                actor=restricted_user,
                 metadata={"required_roles": ["admin", "finance"]},
             )
-            return HTMLResponse(_render_admin_only_page(request, "薪酬管理"), status_code=403)
+            return HTMLResponse(_render_admin_only_page(request, restricted_feature[1]), status_code=403)
 
     if unsafe_method:
         if request.url.path == "/api/db/query":
@@ -4354,7 +4358,7 @@ def _render_dashboard_page(request: Request):
                     <h3>工作入口</h3>
                     <p>先揀你要處理嘅模組，再進入對應頁面。</p>
                     <div class="links">
-                        <a class="link" href="/class-control"><strong>課堂控制台</strong><span>今日／本週安排、每月核堂、導師代課、補堂及加堂。</span></a>
+                        {f'<a class="link" href="/class-control"><strong>課堂控制台</strong><span>今日／本週安排、每月核堂、導師代課、補堂及加堂。</span></a>' if user and _normalize_role(user[3]) in {"admin", "finance"} else '<div class="link" style="opacity:.55; pointer-events:none;"><strong>課堂控制台</strong><span>只限 Admin 使用。</span></div>'}
                         {f'<a class="link" href="/salary/teachers"><strong>導師列表</strong><span>查看各導師班數、狀態與薪酬詳情。</span></a>' if user and _normalize_role(user[3]) == "admin" else ''}
                         {f'<a class="link" href="/salary/classes"><strong>班別列表</strong><span>整理學校、星期、導師同時薪資料。</span></a>' if user and _normalize_role(user[3]) in {"admin", "finance"} else ''}
                         <a class="link" href="/attendance"><strong>學生點名系統</strong><span>記錄各地區課堂出席、缺席同原因。</span></a>
