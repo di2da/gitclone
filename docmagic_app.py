@@ -5230,8 +5230,16 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
                 chips.append(f'<a class="month-chip" href="/calendar/session/{lesson["id"]}" style="--chip:{color};--chip-bg:{background}"><b>{html.escape((lesson["start_time"] or "")[:5])}</b> {html.escape(_school_short_name(lesson["school_name"] or ""))}</a>')
             dots = "".join('<i></i>' for _ in lessons[:3])
             more = f'<span class="more-count">+{len(lessons)-3}</span>' if len(lessons) > 3 else ""
-            classes = "month-cell" + (" today" if cursor_date == today else "") + (" outside" if cursor_date.month != month else "")
-            cells.append(f'<button type="button" class="{classes}" data-date="{cursor_date.isoformat()}" aria-label="{cursor_date.month}月{cursor_date.day}日，{len(lessons)}堂"><span class="date-number">{cursor_date.day}</span><div class="month-chips">{"".join(chips)}</div><div class="density">{dots}{more}</div></button>')
+            lesson_count = len(lessons)
+            heat_class = "" if not lesson_count else (" heat-1" if lesson_count <= 2 else " heat-2" if lesson_count <= 5 else " heat-3")
+            has_cancelled = any(lesson["status"] in {"取消", "取消待補"} for lesson in lessons)
+            has_attention = any(lesson["status"] in {"待確認", "改期"} for lesson in lessons)
+            alert_kind = " cancelled" if has_cancelled else " attention" if has_attention else ""
+            alert_label = "，有取消課堂" if has_cancelled else "，有課堂待處理" if has_attention else ""
+            alert_dot = f'<i class="calendar-alert{alert_kind}" title="{alert_label.lstrip("，")}"></i>' if alert_kind else ""
+            count_badge = f'<span class="class-count">{lesson_count}堂</span>' if lesson_count else ""
+            classes = "month-cell" + heat_class + (" today" if cursor_date == today else "") + (" outside" if cursor_date.month != month else "")
+            cells.append(f'<button type="button" class="{classes}" data-date="{cursor_date.isoformat()}" aria-label="{cursor_date.month}月{cursor_date.day}日，{lesson_count}堂{alert_label}"><span class="date-number">{cursor_date.day}</span>{alert_dot}<div class="month-chips">{"".join(chips)}</div><div class="density">{dots}{more}</div>{count_badge}</button>')
             if first_day <= cursor_date <= last_day:
                 agenda_rows = []
                 for lesson in lessons:
@@ -5242,12 +5250,13 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
         current_month_session_count = sum(1 for row in rows if first_day.isoformat() <= row["session_date"] <= last_day.isoformat())
         content = f"""
           <style>
-            .filter-toggle{{display:none}}.month-cell{{font:inherit;color:var(--ink);text-align:left;cursor:pointer}}.mobile-agenda{{display:none}}
+            .filter-toggle{{display:none}}.month-cell{{font:inherit;color:var(--ink);text-align:left;cursor:pointer}}.class-count,.calendar-alert{{display:none}}.mobile-agenda{{display:none}}
             @media(max-width:700px){{
               .filter-toggle{{display:flex;width:100%;min-height:48px;align-items:center;justify-content:space-between;margin:0 0 12px;padding:0 16px;border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);font-size:14px;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.04)}}
               .filter-bar{{display:none;grid-template-columns:1fr 1fr;overflow:visible}}.filter-bar.open{{display:grid}}.filter-bar select{{min-width:0;width:100%;max-width:none}}.clear-filter{{justify-content:center}}
-              .month-cell{{min-height:60px;padding:8px;box-shadow:none}}.month-cell:hover{{transform:none}}.month-cell.selected{{background:#FBF5E8;box-shadow:0 0 0 2px var(--gold) inset}}.month-cell.today:not(.selected){{box-shadow:0 0 0 1.5px var(--gold) inset}}
-              .month-chips{{display:none}}.density{{position:static;justify-content:center;margin-top:9px}}.density i{{width:5px;height:5px}}.more-count{{font-size:9px}}
+              .month-grid,.weekday-row{{grid-template-columns:repeat(7,minmax(0,1fr))}}.month-cell{{display:flex;min-width:0;min-height:68px;padding:7px;flex-direction:column;align-items:flex-start;justify-content:space-between;box-shadow:none;overflow:hidden}}.month-cell:hover{{transform:none}}.month-cell.heat-1{{background:#F3F8FF}}.month-cell.heat-2{{background:#E0EEFF}}.month-cell.heat-3{{background:#C8E0FF}}.month-cell.selected{{background:#FBF5E8;box-shadow:0 0 0 2px var(--gold) inset}}.month-cell.today:not(.selected){{box-shadow:0 0 0 1.5px var(--gold) inset}}
+              .month-chips,.density{{display:none}}.class-count{{display:inline-flex;max-width:100%;align-items:center;min-height:20px;padding:2px 6px;border-radius:999px;background:rgba(255,255,255,.82);color:#075EA8;font-size:9px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}}.month-cell.selected .class-count{{color:#8B6725}}
+              .calendar-alert{{display:block;position:absolute;top:8px;right:7px;width:7px;height:7px;border-radius:50%}}.calendar-alert.attention{{background:#FF9F0A}}.calendar-alert.cancelled{{background:#FF453A}}
               .mobile-agenda{{display:block;margin-top:24px}}.agenda-panel{{display:none}}.agenda-panel.active{{display:block}}.agenda-panel h3{{margin:0 0 12px;font-size:18px}}.agenda-panel p{{padding:20px;text-align:center;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:16px}}
               .agenda-row{{display:grid;grid-template-columns:54px minmax(0,1fr) 10px;align-items:center;gap:12px;min-height:66px;margin-bottom:8px;padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:#fff;color:var(--ink);text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.04)}}.agenda-row time{{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}}.agenda-row span{{display:grid;gap:3px;min-width:0}}.agenda-row strong,.agenda-row small{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.agenda-row strong{{font-size:14px}}.agenda-row small{{color:var(--muted);font-size:12px}}.agenda-row i{{width:10px;height:10px;border-radius:50%}}
             }}

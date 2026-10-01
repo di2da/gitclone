@@ -38,6 +38,9 @@ class AppleUxTests(unittest.TestCase):
         self.assertIn("min-height:44px", source)
         self.assertIn("mobile-agenda", source)
         self.assertIn("filter-toggle", source)
+        self.assertIn("class-count", source)
+        self.assertIn("heat-3", source)
+        self.assertIn("calendar-alert", source)
 
     def test_login_uses_light_theme(self):
         html = docmagic_app._render_login_page()
