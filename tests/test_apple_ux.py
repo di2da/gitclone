@@ -63,6 +63,12 @@ class AppleUxTests(unittest.TestCase):
         self.assertIn("desktop-client-manager", source)
         self.assertIn("mobile-add-toggle", source)
 
+    def test_accounts_page_recognizes_blob_persistence(self):
+        source = inspect.getsource(docmagic_app._render_accounts_page)
+        self.assertIn("blob_persistence_enabled", source)
+        self.assertIn("永久儲存已啟用（Vercel Blob）", source)
+        self.assertIn("storage_class = \"notice ok\"", source)
+
 
 if __name__ == "__main__":
     unittest.main()

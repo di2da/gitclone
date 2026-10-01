@@ -8294,11 +8294,18 @@ def _render_accounts_page(request: Request, notice: str = ""):
     rows = cursor.fetchall()
     conn.close()
 
-    extra_notice = ""
-    if DB_IS_EPHEMERAL:
-        extra_notice = "目前仍係暫存模式；要電話同電腦永久共用，請將 `DOCMAGIC_DB_PATH` 指去有持久磁碟的位置。"
-    merged_notice = " ".join(part for part in [notice, extra_notice] if part).strip()
-    notice_html = f'<div class="notice">{html.escape(merged_notice)}</div>' if merged_notice else ""
+    notice_html = f'<div class="notice">{html.escape(notice)}</div>' if notice else ""
+    blob_persistence_enabled = bool(BLOB_READ_WRITE_TOKEN and _blob_normalized_store_id())
+    if DB_IS_EPHEMERAL and blob_persistence_enabled:
+        storage_notice = "永久儲存已啟用（Vercel Blob）；帳戶會喺電話、平板同電腦共用，重新部署後亦會保留。"
+        storage_class = "notice ok"
+    elif DB_IS_EPHEMERAL:
+        storage_notice = "目前係暫存模式；重新部署後資料可能消失。請設定 Vercel Blob，或者將 DOCMAGIC_DB_PATH 指向持久磁碟。"
+        storage_class = "notice warning"
+    else:
+        storage_notice = "永久儲存已啟用（持久磁碟）。"
+        storage_class = "notice ok"
+    notice_html += f'<div class="{storage_class}">{html.escape(storage_notice)}</div>'
     row_html = ""
     for r in rows:
         status = "啟用" if r[4] else "停用"
@@ -8352,6 +8359,8 @@ def _render_accounts_page(request: Request, notice: str = ""):
             }}
             h1, h2 {{ margin: 0 0 10px; }}
             .notice {{ margin-bottom: 14px; padding: 12px 14px; border-radius: 14px; background: #f4ead2; }}
+            .notice.ok {{ background:#E8F9EE; color:#146C2E; border:1px solid rgba(48,209,88,.2); }}
+            .notice.warning {{ background:#FFF3E0; color:#9A5A00; border:1px solid rgba(255,159,10,.2); }}
             table {{ width: 100%; border-collapse: collapse; margin-top: 16px; }}
             th, td {{ padding: 12px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; text-align: left; }}
             th {{ font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #6b7280; }}
