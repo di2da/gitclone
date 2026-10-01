@@ -44,6 +44,8 @@ class AppleUxTests(unittest.TestCase):
         self.assertIn("data-density", source)
         self.assertIn("dk_calendar_month_density", source)
         self.assertIn(".calendar-compact .mobile-agenda", source)
+        self.assertIn(".agenda-panel{{display:none}}", source)
+        self.assertIn(".agenda-panel.active{{display:block}}", source)
         self.assertIn("scrollIntoView", source)
 
     def test_login_uses_light_theme(self):
