@@ -41,6 +41,8 @@ class AppleUxTests(unittest.TestCase):
         self.assertIn("class-count", source)
         self.assertIn("heat-3", source)
         self.assertIn("calendar-alert", source)
+        self.assertIn("data-density", source)
+        self.assertIn("dk_calendar_month_density", source)
 
     def test_login_uses_light_theme(self):
         html = docmagic_app._render_login_page()
