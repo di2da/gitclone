@@ -49,11 +49,20 @@ class MediaToolsTests(unittest.TestCase):
         self.assertIn('"--channel",\n            "whatsapp"', source)
         self.assertIn('"--force-document"', source)
         self.assertIn("_ensure_public_host", source)
+        self.assertIn('"media-worker-tmp"', source)
+        self.assertIn('dir=str(WORK_ROOT)', source)
 
     def test_worker_api_has_separate_bearer_gate(self):
         source = inspect.getsource(docmagic_app._security_gate_middleware)
         self.assertIn('request.url.path.startswith("/api/media/jobs/")', source)
         self.assertIn("_media_worker_authorized", source)
+
+    def test_failed_jobs_can_be_retried_without_resubmitting_url(self):
+        page_source = inspect.getsource(docmagic_app._render_media_tools_page)
+        route_source = inspect.getsource(docmagic_app.media_tools_retry_job)
+        self.assertIn("重新處理", page_source)
+        self.assertIn("requested_by=?", route_source)
+        self.assertIn("status='failed'", route_source)
 
 
 if __name__ == "__main__":

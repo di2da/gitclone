@@ -4931,11 +4931,12 @@ def _render_media_tools_page(request: Request, notice: str = "") -> str:
         title = row[4] or row[5] or row[1]
         size_label = f" · {(row[6] or 0) / 1024 / 1024:.1f} MB" if row[6] else ""
         error_html = f'<div class="job-error">{html.escape((row[7] or "")[:300])}</div>' if row[7] else ""
+        retry_html = f'<form method="post" action="/media-tools/jobs/{row[0]}/retry">{csrf_html}<button class="retry" type="submit">重新處理</button></form>' if row[3] == "failed" else ""
         job_cards.append(f"""
-        <article class="job"><i style="background:{color}"></i><div><strong>{html.escape(title)}</strong><small>{html.escape((row[2] or '').upper())} · {html.escape(row[8] or '')}{size_label}</small>{error_html}</div><span style="color:{color}">{html.escape(label)}</span></article>
+        <article class="job"><i style="background:{color}"></i><div><strong>{html.escape(title)}</strong><small>{html.escape((row[2] or '').upper())} · {html.escape(row[8] or '')}{size_label}</small>{error_html}{retry_html}</div><span style="color:{color}">{html.escape(label)}</span></article>
         """)
     return f"""<!doctype html><html lang="zh-HK"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>媒體下載／轉檔 · {APP_NAME}</title>
-    <style>:root{{--bg:#FAFAFA;--ink:#1D1D1F;--muted:#86868B;--gold:#B8934A;--line:rgba(29,29,31,.09)}}*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif}}main{{max-width:720px;margin:auto;padding:34px 20px 70px}}a{{color:inherit}}header{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:28px}}h1{{margin:0;font-size:34px;letter-spacing:-.5px}}header p{{margin:7px 0 0;color:var(--muted);font-size:13px}}.back{{min-height:44px;display:flex;align-items:center;text-decoration:none;color:var(--muted)}}.card{{margin-bottom:16px;padding:20px;border:1px solid var(--line);border-radius:20px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.05)}}h2{{margin:0 0 14px;font-size:20px}}label{{display:block;margin:12px 0 6px;font-size:13px;font-weight:650}}input,select{{width:100%;min-height:48px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font-size:15px}}button{{min-height:46px;margin-top:14px;padding:0 17px;border:0;border-radius:999px;background:#1D1D1F;color:#fff;font-weight:700;cursor:pointer}}.notice{{margin-bottom:16px;padding:13px 15px;border-radius:14px;background:#FBF5E8;color:#8B6725;font-size:14px}}.hint{{margin-top:7px;color:var(--muted);font-size:12px;line-height:1.5}}.check{{display:grid;grid-template-columns:22px 1fr;align-items:start;gap:8px;margin-top:14px;font-size:13px;line-height:1.5}}.check input{{width:18px;height:18px;min-height:0;margin-top:1px}}.jobs{{display:grid;gap:9px}}.job{{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff}}.job>i{{width:10px;height:10px;border-radius:50%}}.job div{{display:grid;gap:4px;min-width:0}}.job strong{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}}.job small{{color:var(--muted);font-size:11px}}.job>span{{font-size:12px;font-weight:700}}.job-error{{color:#C62828;font-size:11px;line-height:1.4}}@media(max-width:560px){{main{{padding:24px 16px 50px}}header{{display:block}}.back{{margin-top:8px}}.job{{grid-template-columns:10px minmax(0,1fr)}}.job>span{{grid-column:2}}}}</style></head><body><main><header><div><h1>媒體下載／轉檔</h1><p>由你部 Mac 嘅 OmniGet 處理，完成後以 WhatsApp 文件傳送。</p></div><a class="back" href="/dashboard">← 返回</a></header>{notice_html}
+    <style>:root{{--bg:#FAFAFA;--ink:#1D1D1F;--muted:#86868B;--gold:#B8934A;--line:rgba(29,29,31,.09)}}*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif}}main{{max-width:720px;margin:auto;padding:34px 20px 70px}}a{{color:inherit}}header{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:28px}}h1{{margin:0;font-size:34px;letter-spacing:-.5px}}header p{{margin:7px 0 0;color:var(--muted);font-size:13px}}.back{{min-height:44px;display:flex;align-items:center;text-decoration:none;color:var(--muted)}}.card{{margin-bottom:16px;padding:20px;border:1px solid var(--line);border-radius:20px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.05)}}h2{{margin:0 0 14px;font-size:20px}}label{{display:block;margin:12px 0 6px;font-size:13px;font-weight:650}}input,select{{width:100%;min-height:48px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font-size:15px}}button{{min-height:46px;margin-top:14px;padding:0 17px;border:0;border-radius:999px;background:#1D1D1F;color:#fff;font-weight:700;cursor:pointer}}button.retry{{min-height:36px;margin-top:6px;padding:0 13px;background:#F2F2F7;color:#1D1D1F;font-size:12px}}.notice{{margin-bottom:16px;padding:13px 15px;border-radius:14px;background:#FBF5E8;color:#8B6725;font-size:14px}}.hint{{margin-top:7px;color:var(--muted);font-size:12px;line-height:1.5}}.check{{display:grid;grid-template-columns:22px 1fr;align-items:start;gap:8px;margin-top:14px;font-size:13px;line-height:1.5}}.check input{{width:18px;height:18px;min-height:0;margin-top:1px}}.jobs{{display:grid;gap:9px}}.job{{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff}}.job>i{{width:10px;height:10px;border-radius:50%}}.job div{{display:grid;gap:4px;min-width:0}}.job strong{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}}.job small{{color:var(--muted);font-size:11px}}.job>span{{font-size:12px;font-weight:700}}.job-error{{color:#C62828;font-size:11px;line-height:1.4;overflow-wrap:anywhere}}@media(max-width:560px){{main{{padding:24px 16px 50px}}header{{display:block}}.back{{margin-top:8px}}.job{{grid-template-columns:10px minmax(0,1fr)}}.job>span{{grid-column:2}}}}</style></head><body><main><header><div><h1>媒體下載／轉檔</h1><p>由你部 Mac 嘅 OmniGet 處理，完成後以 WhatsApp 文件傳送。</p></div><a class="back" href="/dashboard">← 返回</a></header>{notice_html}
     <section class="card"><h2>WhatsApp 收件設定</h2><form method="post" action="/media-tools/phone">{csrf_html}<label>收件電話</label><input name="delivery_phone" inputmode="tel" value="{html.escape(delivery_phone)}" placeholder="例如 +85267004444" required><div class="hint">目前：{html.escape(masked_phone or '未設定')}。只會私訊呢個號碼，唔會傳到群組。</div><button type="submit">儲存號碼</button></form></section>
     <section class="card"><h2>新增任務</h2><form method="post" action="/media-tools/jobs">{csrf_html}<label>影片／媒體連結</label><input name="source_url" type="url" placeholder="https://..." required><label>輸出格式</label><select name="output_format"><option value="mp3">MP3 音訊（以 ZIP 文件傳送）</option><option value="mp4">MP4 影片</option></select><label class="check"><input type="checkbox" name="authorization_confirmed" value="1" required><span>我確認自己擁有此內容，或已獲授權下載及轉換。</span></label><button type="submit">交俾 OmniGet</button></form></section>
     <section class="card"><h2>最近任務</h2><div class="jobs">{''.join(job_cards) if job_cards else '<div class="hint">暫時未有任務。</div>'}</div></section><script>const active=[...document.querySelectorAll('.job>span')].some(el=>/等候|處理/.test(el.textContent));if(active)setTimeout(()=>location.reload(),8000)</script></main></body></html>"""
@@ -4982,6 +4983,18 @@ async def media_tools_create_job(request: Request, source_url: str = Form(""), o
     return RedirectResponse("/media-tools?notice=queued", status_code=303)
 
 
+@app.post("/media-tools/jobs/{job_id}/retry")
+async def media_tools_retry_job(request: Request, job_id: int, user: tuple = Depends(require_roles("admin", "manager", "finance", "tutor"))):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE media_jobs SET status='queued',error=NULL,worker_id=NULL,started_at=NULL,completed_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=? AND requested_by=? AND status='failed'", (job_id, user[1]))
+    changed = cursor.rowcount
+    conn.commit(); conn.close()
+    if changed:
+        _audit_action_request(request, "media_job_retry", target_type="media_job", target_id=str(job_id), actor=user)
+    return RedirectResponse("/media-tools?notice=queued" if changed else "/media-tools", status_code=303)
+
+
 @app.post("/api/media/jobs/claim")
 async def media_worker_claim(request: Request):
     if not _media_worker_authorized(request):
@@ -5011,6 +5024,23 @@ async def media_worker_complete(request: Request, job_token: str):
         "completed" if ok else "failed", str(payload.get("source_title") or "")[:300], str(payload.get("output_name") or "")[:300], int(payload.get("output_size_bytes") or 0), str(payload.get("delivery_message_id") or "")[:200], "" if ok else str(payload.get("error") or "Unknown worker error")[:1000], job_token,
     ))
     changed = cursor.rowcount; conn.commit(); conn.close()
+    return Response(json.dumps({"ok":bool(changed)}), media_type="application/json", status_code=200 if changed else 404)
+
+
+@app.post("/api/media/jobs/retry")
+async def media_worker_retry(request: Request):
+    if not _media_worker_authorized(request):
+        return Response("Unauthorized", status_code=401)
+    payload = await request.json()
+    try:
+        job_id = int(payload.get("job_id"))
+    except (TypeError, ValueError):
+        return Response("Bad Request", status_code=400)
+    conn = _bootstrap_sqlite_connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE media_jobs SET status='queued',error=NULL,worker_id=NULL,started_at=NULL,completed_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='failed'", (job_id,))
+    changed = cursor.rowcount
+    conn.commit(); conn.close()
     return Response(json.dumps({"ok":bool(changed)}), media_type="application/json", status_code=200 if changed else 404)
 
 

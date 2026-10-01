@@ -37,6 +37,12 @@ POLL_SECONDS = max(10, int(os.environ.get("DOCMAGIC_MEDIA_POLL_SECONDS", "30")))
 ONCE = os.environ.get("DOCMAGIC_MEDIA_WORKER_ONCE", "").strip() == "1"
 DRY_RUN = os.environ.get("DOCMAGIC_MEDIA_DRY_RUN", "").strip() == "1"
 MAX_OUTPUT_BYTES = 250 * 1024 * 1024
+WORK_ROOT = Path(
+    os.environ.get(
+        "DOCMAGIC_MEDIA_WORK_ROOT",
+        str(Path.home() / ".openclaw" / "workspace" / "media-worker-tmp"),
+    )
+)
 
 
 def _token() -> str:
@@ -79,14 +85,18 @@ def _post_json(path: str, payload: dict[str, Any], attempts: int = 1) -> dict[st
 def _run(command: list[str], timeout: int = 3600) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PATH"] = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-    return subprocess.run(
-        command,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env=env,
-    )
+    try:
+        return subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = ((exc.stderr or exc.stdout or "外部工具執行失敗").strip())[-800:]
+        raise RuntimeError(detail) from exc
 
 
 def _ensure_public_host(source_url: str) -> None:
@@ -208,7 +218,8 @@ def _process(job: dict[str, Any]) -> None:
     try:
         if not OMNIGET_YTDLP.is_file():
             raise RuntimeError(f"OmniGet engine not found: {OMNIGET_YTDLP}")
-        with tempfile.TemporaryDirectory(prefix="dk-media-") as raw_folder:
+        WORK_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="dk-media-", dir=str(WORK_ROOT)) as raw_folder:
             folder = Path(raw_folder)
             output, title = _download(job, folder)
             delivery = _delivery_file(output, str(job["output_format"]))
