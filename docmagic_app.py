@@ -5782,6 +5782,37 @@ def _render_class_control_page(request: Request):
     else:
         next_sentence = "未來 60 日暫時冇已排課堂。"
 
+    today_slides = []
+    if active_today:
+        for index, row in enumerate(active_today, start=1):
+            status_color, _ = _apple_status(row["status"])
+            today_slides.append(f"""
+            <a class="today-slide" href="/calendar/session/{row['id']}" aria-label="今日第 {index} 堂：{html.escape(row['school_name'] or '未填學校')}">
+                <span class="today-slide-kicker">今日 · 第 {index} 堂／共 {len(active_today)} 堂</span>
+                <span class="today-slide-time">{html.escape((row['start_time'] or '待定')[:5])}<i style="background:{status_color}" title="{html.escape(row['status'] or '已排')}"></i></span>
+                <strong>{html.escape(row['school_name'] or '未填學校')}</strong>
+                <small>{html.escape(row['program_name'] or '未填班別')} · {html.escape(row['teacher_name'] or '未配對導師')}</small>
+            </a>""")
+    else:
+        today_slides.append(f"""
+        <div class="today-slide today-slide-empty">
+            <span class="today-slide-kicker">今日</span>
+            <strong>{focus_sentence}</strong>
+            <small>{next_sentence}</small>
+        </div>""")
+
+    today_controls = ""
+    today_dots = ""
+    if len(today_slides) > 1:
+        today_controls = """
+        <span class="today-controls">
+            <button type="button" class="today-prev" aria-label="上一堂">‹</button>
+            <button type="button" class="today-next" aria-label="下一堂">›</button>
+        </span>"""
+        today_dots = '<div class="today-page-dots" aria-hidden="true">' + "".join(
+            f'<i class="{"active" if index == 0 else ""}"></i>' for index in range(len(today_slides))
+        ) + "</div>"
+
     reminder_html = ""
     if pending_previous:
         days_left = max(0, 3 - today.day)
@@ -5821,10 +5852,29 @@ def _render_class_control_page(request: Request):
         .dashboard .cc-stats {{ grid-template-columns:repeat(3,minmax(0,1fr)); }}
         .dashboard .cc-stat {{ min-width:0; }}
         .dashboard-head h1 {{ margin:0 0 7px;font-size:34px;line-height:1.08;letter-spacing:-.5px; }}
-        .today-focus {{ padding:22px;border-radius:20px;margin-bottom:12px; }}
+        .today-focus {{ padding:0;border-radius:20px;margin-bottom:12px;overflow:hidden; }}
         .eyebrow {{ display:block;color:var(--muted);font-size:13px;font-weight:700;letter-spacing:.08em;margin-bottom:12px; }}
         .focus-line {{ margin:0 0 9px;font-size:24px;line-height:1.25;letter-spacing:-.4px; }}
         .focus-sub {{ margin:0;color:var(--muted);font-size:14px;line-height:1.55; }}
+        .today-carousel-head {{ display:flex;align-items:center;justify-content:space-between;padding:16px 18px 0; }}
+        .today-carousel-head .eyebrow {{ margin:0; }}
+        .today-controls {{ display:flex;gap:6px; }}
+        .today-controls button {{ width:36px;height:36px;border:0;border-radius:50%;background:#F2F2F7;color:var(--ink);font-size:24px;line-height:1;cursor:pointer;transition:transform 180ms ease-out,background 180ms ease-out; }}
+        .today-controls button:hover {{ transform:scale(1.06);background:#E8E8ED; }}
+        .today-track {{ display:flex;gap:10px;overflow-x:auto;padding:12px 18px 18px;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none;overscroll-behavior-x:contain; }}
+        .today-track::-webkit-scrollbar {{ display:none; }}
+        .today-slide {{ flex:0 0 100%;min-width:0;display:grid;gap:7px;padding:18px;border-radius:16px;background:linear-gradient(145deg,#FBF7ED,#FFF);border:1px solid rgba(184,147,74,.2);color:var(--ink);text-decoration:none;scroll-snap-align:start;transition:transform 180ms ease-out,box-shadow 180ms ease-out; }}
+        .today-slide:hover {{ transform:scale(1.006);box-shadow:0 8px 22px rgba(0,0,0,.07); }}
+        .today-slide-kicker {{ color:var(--gold);font-size:12px;font-weight:700;letter-spacing:.02em; }}
+        .today-slide-time {{ display:flex;align-items:center;gap:10px;font-size:30px;font-weight:750;letter-spacing:-.6px;font-variant-numeric:tabular-nums; }}
+        .today-slide-time i {{ width:10px;height:10px;border-radius:50%; }}
+        .today-slide strong {{ font-size:18px;line-height:1.25; }}
+        .today-slide small {{ color:var(--muted);font-size:13px;line-height:1.45; }}
+        .today-slide-empty {{ min-height:128px;align-content:center; }}
+        .today-slide-empty strong {{ font-size:22px;letter-spacing:-.25px; }}
+        .today-page-dots {{ display:flex;justify-content:center;gap:6px;margin:-8px 0 14px; }}
+        .today-page-dots i {{ width:6px;height:6px;border-radius:50%;background:#D2D2D7;transition:width 180ms ease-out,background 180ms ease-out; }}
+        .today-page-dots i.active {{ width:18px;border-radius:999px;background:var(--gold); }}
         .smart-reminder {{ display:flex;align-items:center;gap:14px;padding:20px;margin:0 0 36px;border-radius:20px;color:white;text-decoration:none;background:linear-gradient(135deg,#B8934A,#D4AF6E);box-shadow:0 5px 18px rgba(184,147,74,.22);transition:transform 180ms ease-out,box-shadow 180ms ease-out; }}
         .smart-reminder:hover {{ transform:translateY(-2px);box-shadow:0 10px 28px rgba(184,147,74,.3); }}
         .reminder-icon {{ display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.18);font-size:20px;flex:0 0 auto; }}
@@ -5843,13 +5893,16 @@ def _render_class_control_page(request: Request):
         .tool-tile:hover {{ transform:scale(1.018);box-shadow:0 8px 22px rgba(0,0,0,.08); }}
         .tool-icon {{ display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:12px;background:var(--tile-bg);color:var(--tile-color);font-size:17px;font-weight:800;font-variant-numeric:tabular-nums; }}
         .tool-label {{ min-width:0;font-size:14px;font-weight:600;line-height:1.25; }} .tool-arrow {{ margin-left:auto;color:#C7C7CC;font-size:18px; }}
-        @media(max-width:560px) {{ .dashboard {{ width:100%;overflow:hidden; }} .dashboard .cc-stats {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} .focus-line {{ font-size:21px; }} .smart-reminder {{ align-items:flex-start;flex-wrap:wrap; }} .reminder-copy {{ min-width:0;flex:1 1 calc(100% - 56px); }} .reminder-cta {{ margin-left:52px; }} .lesson-card {{ grid-template-columns:60px minmax(0,1fr) 10px;padding:14px; }} .tool-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .tool-tile {{ padding:11px;gap:9px; }} .tool-icon {{ width:38px;height:38px;flex-basis:38px; }} }}
+        @media(max-width:560px) {{ .dashboard {{ width:100%;overflow:hidden; }} .dashboard .cc-stats {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} .focus-line {{ font-size:21px; }} .today-track {{ padding-right:34px; }} .today-slide {{ flex-basis:90%; }} .today-controls button {{ width:44px;height:44px; }} .smart-reminder {{ align-items:flex-start;flex-wrap:wrap; }} .reminder-copy {{ min-width:0;flex:1 1 calc(100% - 56px); }} .reminder-cta {{ margin-left:52px; }} .lesson-card {{ grid-template-columns:60px minmax(0,1fr) 10px;padding:14px; }} .tool-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .tool-tile {{ padding:11px;gap:9px; }} .tool-icon {{ width:38px;height:38px;flex-basis:38px; }} }}
     </style>
     <div class="dashboard-head">
         <h1>{greeting}，{html.escape(display_name)} {greeting_icon}</h1>
         <div class="cc-muted">今日 · {today.month}月{today.day}日 {_WEEKDAY_ZH[today.weekday()]}</div>
     </div>
-    <section class="cc-card today-focus"><span class="eyebrow">今日</span><h2 class="focus-line">{focus_sentence}</h2><p class="focus-sub">{next_sentence}</p></section>
+    <section class="cc-card today-focus">
+        <div class="today-carousel-head"><span class="eyebrow">今日</span>{today_controls}</div>
+        <div class="today-track">{''.join(today_slides)}</div>{today_dots}
+    </section>
     {reminder_html}
     <section><div class="section-head"><h2>本週</h2><a href="/calendar?view=week">完整校曆 →</a></div><div class="week-list">{''.join(grouped_week) if grouped_week else '<div class="empty-week">本週暫時冇課堂。</div>'}</div></section>
     <div class="cc-stats">
@@ -5865,6 +5918,40 @@ def _render_class_control_page(request: Request):
         <a class="tool-tile" href="/school-monitor?year={today.year}&month={today.month}"><span class="tool-icon" style="--tile-bg:#FFE9E7;--tile-color:#D93025;">表</span><span class="tool-label">課堂月報</span><span class="tool-arrow">›</span></a>
         <a class="tool-tile" href="/modules"><span class="tool-icon" style="--tile-bg:#F2F2F7;--tile-color:#636366;">•••</span><span class="tool-label">全部功能</span><span class="tool-arrow">›</span></a>
     </div></section>
+    <script>
+    (() => {{
+        const track = document.querySelector('.today-track');
+        if (!track) return;
+        const slides = [...track.querySelectorAll('.today-slide')];
+        const dots = [...document.querySelectorAll('.today-page-dots i')];
+        if (slides.length < 2) return;
+        let current = 0;
+        let timer;
+        const pick = (index) => {{
+            current = (index + slides.length) % slides.length;
+            slides[current].scrollIntoView({{behavior:'smooth',block:'nearest',inline:'start'}});
+            dots.forEach((dot, i) => dot.classList.toggle('active', i === current));
+        }};
+        const restart = () => {{
+            clearInterval(timer);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) timer = setInterval(() => pick(current + 1), 6000);
+        }};
+        document.querySelector('.today-prev')?.addEventListener('click', () => {{ pick(current - 1); restart(); }});
+        document.querySelector('.today-next')?.addEventListener('click', () => {{ pick(current + 1); restart(); }});
+        let settle;
+        track.addEventListener('scroll', () => {{
+            clearTimeout(settle);
+            settle = setTimeout(() => {{
+                const nearest = slides.reduce((best, slide, i) => Math.abs(slide.offsetLeft - track.scrollLeft) < best.distance ? {{index:i,distance:Math.abs(slide.offsetLeft - track.scrollLeft)}} : best, {{index:0,distance:Infinity}});
+                current = nearest.index;
+                dots.forEach((dot, i) => dot.classList.toggle('active', i === current));
+            }}, 90);
+        }}, {{passive:true}});
+        track.addEventListener('pointerdown', () => clearInterval(timer));
+        track.addEventListener('pointerup', restart);
+        restart();
+    }})();
+    </script>
     """
     return _class_control_shell("課堂控制台", body, "dashboard")
 
