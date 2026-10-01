@@ -7,7 +7,7 @@ import re
 import base64
 import urllib.error
 import urllib.request
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlparse
 import subprocess
 import tempfile
 import shutil
@@ -26,6 +26,7 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import traceback
 import ssl
+import ipaddress
 from datetime import datetime, timedelta, timezone, date
 from typing import List, Optional
 from contextvars import ContextVar
@@ -124,6 +125,12 @@ async def _security_gate_middleware(request: Request, call_next):
     }:
         with BLOB_DB_LOCK:
             restored = _restore_blob_database_if_available(DB_PATH)
+            if restored:
+                # The durable Blob can predate a deployment's schema. Reapply the
+                # idempotent media/account migrations after every restore so the
+                # restored database is immediately usable by the new routes.
+                _ensure_user_table()
+                _ensure_media_jobs_table()
         if unsafe_method and not restored:
             return Response("未能取得最新資料，操作已停止，請稍後再試。", status_code=503)
 
@@ -165,6 +172,11 @@ async def _security_gate_middleware(request: Request, call_next):
             if len(body) > 64 * 1024:
                 _audit_action_request(request, "raw_sql_bridge", target_type="bridge", target_id="", result="denied", metadata={"reason": "body_too_large"})
                 return Response("Payload Too Large", status_code=413)
+        elif request.url.path.startswith("/api/media/jobs/"):
+            if not _media_worker_authorized(request):
+                return Response("Unauthorized", status_code=401)
+            if "application/json" not in (request.headers.get("content-type") or "").lower():
+                return Response("Unsupported Media Type", status_code=415)
         elif request.url.path == "/login":
             if not _origin_allowed(request):
                 _audit_action_request(request, "login_origin_denied", target_type="route", target_id="/login", result="denied", metadata={"origin": _extract_request_origin(request)})
@@ -231,6 +243,7 @@ PRODUCTION_ALLOWED_ORIGINS = {
 }
 SERVICE_AUTH_USER = os.environ.get("DOCMAGIC_DB_SERVICE_USER", "").strip()
 SERVICE_AUTH_PASSWORD = os.environ.get("DOCMAGIC_DB_SERVICE_PASSWORD", "").strip()
+MEDIA_WORKER_TOKEN = os.environ.get("DOCMAGIC_MEDIA_WORKER_TOKEN", "").strip()
 SESSION_SIGNING_SECRET = (
     os.environ.get("DOCMAGIC_SESSION_SECRET", "").strip()
     or SERVICE_AUTH_PASSWORD
@@ -754,11 +767,45 @@ def _ensure_user_table():
     for col_name, col_def in [
         ("failed_attempts", "INTEGER DEFAULT 0"),
         ("locked_until", "TEXT"),
+        ("delivery_phone", "TEXT DEFAULT ''"),
         # SQLite cannot add a column with a non-constant default, so keep this nullable.
         ("password_updated_at", "TEXT"),
     ]:
         if col_name not in cols:
             cursor.execute(f"ALTER TABLE app_users ADD COLUMN {col_name} {col_def}")
+    conn.commit()
+    conn.close()
+
+
+@_retry_sqlite_locked
+def _ensure_media_jobs_table():
+    conn = _bootstrap_sqlite_connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS media_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_token TEXT NOT NULL UNIQUE,
+            source_url TEXT NOT NULL,
+            output_format TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'queued',
+            requested_by TEXT NOT NULL,
+            requested_display_name TEXT,
+            delivery_phone TEXT NOT NULL,
+            authorization_confirmed INTEGER NOT NULL DEFAULT 0,
+            source_title TEXT,
+            output_name TEXT,
+            output_size_bytes INTEGER,
+            delivery_message_id TEXT,
+            error TEXT,
+            worker_id TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            started_at TEXT,
+            completed_at TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_media_jobs_status ON media_jobs(status, id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_media_jobs_user ON media_jobs(requested_by, id DESC)")
     conn.commit()
     conn.close()
 
@@ -2396,6 +2443,7 @@ init_preset_db()
 _ensure_user_table()
 _ensure_session_table()
 _ensure_audit_table()
+_ensure_media_jobs_table()
 _ensure_common_clients_table()
 _seed_common_clients()
 _dedupe_common_clients()
@@ -4362,6 +4410,7 @@ def _render_dashboard_page(request: Request):
                         {f'<a class="link" href="/salary/teachers"><strong>導師列表</strong><span>查看各導師班數、狀態與薪酬詳情。</span></a>' if user and _normalize_role(user[3]) == "admin" else ''}
                         {f'<a class="link" href="/salary/classes"><strong>班別列表</strong><span>整理學校、星期、導師同時薪資料。</span></a>' if user and _normalize_role(user[3]) in {"admin", "finance"} else ''}
                         <a class="link" href="/attendance"><strong>學生點名系統</strong><span>記錄各地區課堂出席、缺席同原因。</span></a>
+                        <a class="link" href="/media-tools"><strong>媒體下載／轉檔</strong><span>提交已獲授權連結，由 OmniGet 轉成 MP3／MP4，再私訊到你嘅 WhatsApp。</span></a>
                         {f'<a class="link" href="/salary"><strong>薪酬管理</strong><span>查看薪酬總覽、匯入資料與計算記錄。</span></a>' if user and _normalize_role(user[3]) in {"admin", "finance"} else '<div class="link" style="opacity:.55; pointer-events:none;"><strong>薪酬管理</strong><span>只限 Admin 使用。</span></div>'}
                         <a class="link" href="/calendar"><strong>學校校曆</strong><span>查看本週／本月學校課堂時間表與篩選。</span></a>
                         <a class="link" href="/school-monitor"><strong>學校月報</strong><span>各校課堂統計、完成率、導師出勤與衝突警示。</span></a>
@@ -4799,6 +4848,170 @@ async def modules_dashboard(request: Request):
     if not _current_user_record(request):
         return RedirectResponse("/", status_code=303)
     return HTMLResponse(_render_dashboard_page(request))
+
+
+def _normalize_delivery_phone(value: str) -> str:
+    value = (value or "").strip().replace(" ", "").replace("-", "")
+    if value.startswith("00"):
+        value = "+" + value[2:]
+    if value and not value.startswith("+") and value.isdigit():
+        value = "+852" + value if len(value) == 8 else "+" + value
+    digits = value[1:] if value.startswith("+") else ""
+    if not digits.isdigit() or not (8 <= len(digits) <= 15):
+        return ""
+    return "+" + digits
+
+
+def _safe_media_url(value: str) -> str:
+    value = (value or "").strip()
+    try:
+        parsed = urlparse(value)
+        host = (parsed.hostname or "").strip().lower().rstrip(".")
+        if parsed.scheme not in {"http", "https"} or not host or parsed.username or parsed.password:
+            return ""
+        if host in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
+            return ""
+        try:
+            if ipaddress.ip_address(host).is_private or ipaddress.ip_address(host).is_loopback:
+                return ""
+        except ValueError:
+            pass
+        return value
+    except Exception:
+        return ""
+
+
+def _media_worker_authorized(request: Request) -> bool:
+    header = (request.headers.get("authorization") or "").strip()
+    if not MEDIA_WORKER_TOKEN or not header.lower().startswith("bearer "):
+        return False
+    supplied = header.split(" ", 1)[1].strip()
+    return bool(supplied) and secrets.compare_digest(supplied, MEDIA_WORKER_TOKEN)
+
+
+def _media_status_label(status: str) -> tuple[str, str]:
+    return {
+        "queued": ("等候處理", "#FF9F0A"),
+        "processing": ("OmniGet 處理中", "#0A84FF"),
+        "completed": ("已傳送", "#30D158"),
+        "failed": ("未能完成", "#FF453A"),
+    }.get(status or "", (status or "未知", "#86868B"))
+
+
+def _render_media_tools_page(request: Request, notice: str = "") -> str:
+    user = _current_user_record(request)
+    if not user:
+        return ""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COALESCE(delivery_phone,'') FROM app_users WHERE username=?", (user[1],))
+    phone_row = cursor.fetchone()
+    delivery_phone = (phone_row[0] if phone_row else "") or ""
+    cursor.execute("""
+        SELECT id, source_url, output_format, status, source_title, output_name,
+               output_size_bytes, error, created_at, completed_at
+        FROM media_jobs WHERE requested_by=? ORDER BY id DESC LIMIT 20
+    """, (user[1],))
+    jobs = cursor.fetchall()
+    conn.close()
+    csrf_html = _csrf_input_html(request)
+    notice_map = {
+        "phone-saved": "WhatsApp 收件號碼已儲存。",
+        "queued": "任務已加入隊列；完成後會以 WhatsApp 文件傳送。",
+        "phone-required": "請先儲存有效 WhatsApp 號碼。",
+        "invalid-url": "連結格式不正確，請使用公開 http／https 網址。",
+        "authorization-required": "請先確認你有權下載及轉換內容。",
+        "queue-full": "你已有 3 個任務等候／處理中，請完成後再提交。",
+    }
+    notice_html = f'<div class="notice">{html.escape(notice_map.get(notice, notice))}</div>' if notice else ""
+    masked_phone = (delivery_phone[:4] + "••••" + delivery_phone[-4:]) if len(delivery_phone) >= 10 else delivery_phone
+    job_cards = []
+    for row in jobs:
+        label, color = _media_status_label(row[3])
+        title = row[4] or row[5] or row[1]
+        size_label = f" · {(row[6] or 0) / 1024 / 1024:.1f} MB" if row[6] else ""
+        error_html = f'<div class="job-error">{html.escape((row[7] or "")[:300])}</div>' if row[7] else ""
+        job_cards.append(f"""
+        <article class="job"><i style="background:{color}"></i><div><strong>{html.escape(title)}</strong><small>{html.escape((row[2] or '').upper())} · {html.escape(row[8] or '')}{size_label}</small>{error_html}</div><span style="color:{color}">{html.escape(label)}</span></article>
+        """)
+    return f"""<!doctype html><html lang="zh-HK"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>媒體下載／轉檔 · {APP_NAME}</title>
+    <style>:root{{--bg:#FAFAFA;--ink:#1D1D1F;--muted:#86868B;--gold:#B8934A;--line:rgba(29,29,31,.09)}}*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif}}main{{max-width:720px;margin:auto;padding:34px 20px 70px}}a{{color:inherit}}header{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:28px}}h1{{margin:0;font-size:34px;letter-spacing:-.5px}}header p{{margin:7px 0 0;color:var(--muted);font-size:13px}}.back{{min-height:44px;display:flex;align-items:center;text-decoration:none;color:var(--muted)}}.card{{margin-bottom:16px;padding:20px;border:1px solid var(--line);border-radius:20px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.05)}}h2{{margin:0 0 14px;font-size:20px}}label{{display:block;margin:12px 0 6px;font-size:13px;font-weight:650}}input,select{{width:100%;min-height:48px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font-size:15px}}button{{min-height:46px;margin-top:14px;padding:0 17px;border:0;border-radius:999px;background:#1D1D1F;color:#fff;font-weight:700;cursor:pointer}}.notice{{margin-bottom:16px;padding:13px 15px;border-radius:14px;background:#FBF5E8;color:#8B6725;font-size:14px}}.hint{{margin-top:7px;color:var(--muted);font-size:12px;line-height:1.5}}.check{{display:grid;grid-template-columns:22px 1fr;align-items:start;gap:8px;margin-top:14px;font-size:13px;line-height:1.5}}.check input{{width:18px;height:18px;min-height:0;margin-top:1px}}.jobs{{display:grid;gap:9px}}.job{{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff}}.job>i{{width:10px;height:10px;border-radius:50%}}.job div{{display:grid;gap:4px;min-width:0}}.job strong{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}}.job small{{color:var(--muted);font-size:11px}}.job>span{{font-size:12px;font-weight:700}}.job-error{{color:#C62828;font-size:11px;line-height:1.4}}@media(max-width:560px){{main{{padding:24px 16px 50px}}header{{display:block}}.back{{margin-top:8px}}.job{{grid-template-columns:10px minmax(0,1fr)}}.job>span{{grid-column:2}}}}</style></head><body><main><header><div><h1>媒體下載／轉檔</h1><p>由你部 Mac 嘅 OmniGet 處理，完成後以 WhatsApp 文件傳送。</p></div><a class="back" href="/dashboard">← 返回</a></header>{notice_html}
+    <section class="card"><h2>WhatsApp 收件設定</h2><form method="post" action="/media-tools/phone">{csrf_html}<label>收件電話</label><input name="delivery_phone" inputmode="tel" value="{html.escape(delivery_phone)}" placeholder="例如 +85267004444" required><div class="hint">目前：{html.escape(masked_phone or '未設定')}。只會私訊呢個號碼，唔會傳到群組。</div><button type="submit">儲存號碼</button></form></section>
+    <section class="card"><h2>新增任務</h2><form method="post" action="/media-tools/jobs">{csrf_html}<label>影片／媒體連結</label><input name="source_url" type="url" placeholder="https://..." required><label>輸出格式</label><select name="output_format"><option value="mp3">MP3 音訊（以 ZIP 文件傳送）</option><option value="mp4">MP4 影片</option></select><label class="check"><input type="checkbox" name="authorization_confirmed" value="1" required><span>我確認自己擁有此內容，或已獲授權下載及轉換。</span></label><button type="submit">交俾 OmniGet</button></form></section>
+    <section class="card"><h2>最近任務</h2><div class="jobs">{''.join(job_cards) if job_cards else '<div class="hint">暫時未有任務。</div>'}</div></section><script>const active=[...document.querySelectorAll('.job>span')].some(el=>/等候|處理/.test(el.textContent));if(active)setTimeout(()=>location.reload(),8000)</script></main></body></html>"""
+
+
+@app.get("/media-tools", response_class=HTMLResponse)
+async def media_tools_page(request: Request, notice: str = "", user: tuple = Depends(require_roles("admin", "manager", "finance", "tutor"))):
+    return HTMLResponse(_render_media_tools_page(request, notice))
+
+
+@app.post("/media-tools/phone")
+async def media_tools_phone(request: Request, delivery_phone: str = Form(""), user: tuple = Depends(require_roles("admin", "manager", "finance", "tutor"))):
+    phone = _normalize_delivery_phone(delivery_phone)
+    if not phone:
+        return RedirectResponse("/media-tools?notice=phone-required", status_code=303)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("UPDATE app_users SET delivery_phone=?, updated_at=CURRENT_TIMESTAMP WHERE username=?", (phone, user[1]))
+    conn.commit(); conn.close()
+    _audit_action_request(request, "media_phone_update", target_type="account", target_id=user[1], actor=user, after={"phone_last4": phone[-4:]})
+    return RedirectResponse("/media-tools?notice=phone-saved", status_code=303)
+
+
+@app.post("/media-tools/jobs")
+async def media_tools_create_job(request: Request, source_url: str = Form(""), output_format: str = Form("mp3"), authorization_confirmed: str = Form(""), user: tuple = Depends(require_roles("admin", "manager", "finance", "tutor"))):
+    clean_url = _safe_media_url(source_url)
+    if not clean_url:
+        return RedirectResponse("/media-tools?notice=invalid-url", status_code=303)
+    if authorization_confirmed != "1":
+        return RedirectResponse("/media-tools?notice=authorization-required", status_code=303)
+    output_format = "mp4" if output_format == "mp4" else "mp3"
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COALESCE(delivery_phone,'') FROM app_users WHERE username=?", (user[1],))
+    phone_row = cursor.fetchone(); phone = _normalize_delivery_phone(phone_row[0] if phone_row else "")
+    if not phone:
+        conn.close(); return RedirectResponse("/media-tools?notice=phone-required", status_code=303)
+    cursor.execute("SELECT COUNT(*) FROM media_jobs WHERE requested_by=? AND status IN ('queued','processing')", (user[1],))
+    if (cursor.fetchone()[0] or 0) >= 3:
+        conn.close(); return RedirectResponse("/media-tools?notice=queue-full", status_code=303)
+    token = secrets.token_urlsafe(24)
+    cursor.execute("""INSERT INTO media_jobs (job_token,source_url,output_format,requested_by,requested_display_name,delivery_phone,authorization_confirmed) VALUES (?,?,?,?,?,?,1)""", (token, clean_url, output_format, user[1], user[2] or user[1], phone))
+    job_id = cursor.lastrowid; conn.commit(); conn.close()
+    _audit_action_request(request, "media_job_create", target_type="media_job", target_id=str(job_id), actor=user, after={"format": output_format, "host": urlparse(clean_url).hostname})
+    return RedirectResponse("/media-tools?notice=queued", status_code=303)
+
+
+@app.post("/api/media/jobs/claim")
+async def media_worker_claim(request: Request):
+    if not _media_worker_authorized(request):
+        return Response("Unauthorized", status_code=401)
+    payload = await request.json()
+    worker_id = str(payload.get("worker_id") or "mac-worker")[:80]
+    conn = _bootstrap_sqlite_connect(DB_PATH)
+    cursor = conn.cursor(); cursor.execute("BEGIN IMMEDIATE")
+    cursor.execute("UPDATE media_jobs SET status='queued',worker_id=NULL,started_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE status='processing' AND started_at < datetime('now','-45 minutes')")
+    cursor.execute("SELECT id,job_token,source_url,output_format,delivery_phone,requested_by FROM media_jobs WHERE status='queued' ORDER BY id LIMIT 1")
+    row = cursor.fetchone()
+    if row:
+        cursor.execute("UPDATE media_jobs SET status='processing',worker_id=?,started_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP,error=NULL WHERE id=?", (worker_id,row[0]))
+    conn.commit(); conn.close()
+    job = None if not row else {"id":row[0],"job_token":row[1],"source_url":row[2],"output_format":row[3],"delivery_phone":row[4],"requested_by":row[5]}
+    return Response(json.dumps({"ok":True,"job":job}, ensure_ascii=False), media_type="application/json")
+
+
+@app.post("/api/media/jobs/{job_token}/complete")
+async def media_worker_complete(request: Request, job_token: str):
+    if not _media_worker_authorized(request):
+        return Response("Unauthorized", status_code=401)
+    payload = await request.json(); ok = bool(payload.get("ok"))
+    conn = _bootstrap_sqlite_connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""UPDATE media_jobs SET status=?,source_title=?,output_name=?,output_size_bytes=?,delivery_message_id=?,error=?,completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE job_token=? AND status='processing'""", (
+        "completed" if ok else "failed", str(payload.get("source_title") or "")[:300], str(payload.get("output_name") or "")[:300], int(payload.get("output_size_bytes") or 0), str(payload.get("delivery_message_id") or "")[:200], "" if ok else str(payload.get("error") or "Unknown worker error")[:1000], job_token,
+    ))
+    changed = cursor.rowcount; conn.commit(); conn.close()
+    return Response(json.dumps({"ok":bool(changed)}), media_type="application/json", status_code=200 if changed else 404)
 
 
 def _get_calendar_filter_options():
@@ -5957,6 +6170,7 @@ def _render_class_control_page(request: Request):
         <a class="tool-tile" href="/salary"><span class="tool-icon" style="--tile-bg:#F1EAFE;--tile-color:#7D45C5;">$</span><span class="tool-label">薪酬</span><span class="tool-arrow">›</span></a>
         <a class="tool-tile" href="/class-control/reconcile?year={previous_year}&month={previous_month}"><span class="tool-icon" style="--tile-bg:#FFF3E0;--tile-color:#C06B00;">✓</span><span class="tool-label">月結核堂</span><span class="tool-arrow">›</span></a>
         <a class="tool-tile" href="/school-monitor?year={today.year}&month={today.month}"><span class="tool-icon" style="--tile-bg:#FFE9E7;--tile-color:#D93025;">表</span><span class="tool-label">課堂月報</span><span class="tool-arrow">›</span></a>
+        <a class="tool-tile" href="/media-tools"><span class="tool-icon" style="--tile-bg:#E8F5FF;--tile-color:#007AFF;">媒</span><span class="tool-label">媒體轉檔</span><span class="tool-arrow">›</span></a>
         <a class="tool-tile" href="/modules"><span class="tool-icon" style="--tile-bg:#F2F2F7;--tile-color:#636366;">•••</span><span class="tool-label">全部功能</span><span class="tool-arrow">›</span></a>
     </div></section>
     <script>
