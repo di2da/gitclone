@@ -5984,7 +5984,7 @@ async def class_control_program_teacher(
     return RedirectResponse("/class-control/teachers", status_code=303)
 
 
-def _render_class_reconciliation(request: Request, year: int, month: int, original_id: int = 0):
+def _render_class_reconciliation(request: Request, year: int, month: int, original_id: int = 0, saved: bool = False):
     month_start, month_end = _class_control_month_bounds(year, month)
     previous_year, previous_month = _class_control_shift_month(year, month, -1)
     next_year, next_month = _class_control_shift_month(year, month, 1)
@@ -6019,7 +6019,10 @@ def _render_class_reconciliation(request: Request, year: int, month: int, origin
     program_options = "".join(f'<option value="{p["id"]}"{" selected" if original and original["program_id"] == p["id"] else ""}>{html.escape(p["school_name"] or "-")}｜{html.escape(p["program_name"] or "-")}｜{html.escape(p["teacher_name"] or "未配對")}</option>' for p in programs)
     default_type = "補課" if original else "加堂"
     default_date = original["session_date"] if original else month_start.isoformat()
+    saved_badge = '<div class="save-feedback" role="status">✓ 已儲存</div>' if saved else ""
     body = f"""
+    <style>.save-feedback{{position:fixed;right:24px;top:24px;z-index:20;padding:10px 15px;border-radius:999px;background:#E8F9EE;color:#16853D;font-size:13px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.1);animation:save-pop 2.6s ease-out both}}@keyframes save-pop{{0%{{opacity:0;transform:translateY(-8px) scale(.92)}}12%,75%{{opacity:1;transform:translateY(0) scale(1)}}100%{{opacity:0;transform:translateY(-4px)}}}}</style>
+    {saved_badge}
     <div class="cc-top"><div><h1>{year}年{month}月 · 月結核堂</h1><div class="cc-muted">正常課堂一次過確認；只逐項處理取消、改期、補堂及加堂。</div></div><div class="cc-actions"><a class="cc-btn" href="/class-control">← 課堂控制台</a><a class="cc-btn" href="/class-control/reconcile?year={previous_year}&month={previous_month}">← 上月</a><a class="cc-btn" href="/class-control/reconcile?year={next_year}&month={next_month}">下月 →</a></div></div>
     <div class="cc-stats"><div class="cc-stat"><strong>{len(rows)}</strong><span>總課堂</span></div><div class="cc-stat"><strong>{counts['已完成']}</strong><span>已完成</span></div><div class="cc-stat"><strong>{counts['已排'] + counts['待確認']}</strong><span>待核對</span></div><div class="cc-stat"><strong>{counts['取消待補']}</strong><span>待補堂</span></div></div>
     <div class="cc-card"><h2>一次過確認正常課堂</h2><div class="cc-muted" style="margin-bottom:10px;">只會將本月已過日期而仍為「已排／待確認」的課堂改成「已完成」；取消及改期不會受影響。</div><form method="post" action="/class-control/reconcile/confirm" onsubmit="return confirm('確認將本月其餘正常課堂標示為已完成？');">{_csrf_input_html(request)}<input type="hidden" name="year" value="{year}"><input type="hidden" name="month" value="{month}"><button class="cc-btn primary" type="submit">確認本月其餘正常課堂已完成</button></form></div>
@@ -6035,12 +6038,13 @@ async def class_control_reconcile_page(
     year: int = 0,
     month: int = 0,
     original_id: int = 0,
+    saved: int = 0,
     user: tuple = Depends(require_roles("admin", "finance")),
 ):
     if not year or not month:
         now = _hk_now()
         year, month = _class_control_shift_month(now.year, now.month, -1)
-    return HTMLResponse(_render_class_reconciliation(request, year, month, original_id=original_id))
+    return HTMLResponse(_render_class_reconciliation(request, year, month, original_id=original_id, saved=bool(saved)))
 
 
 @app.post("/class-control/reconcile/confirm")
@@ -6062,7 +6066,7 @@ async def class_control_reconcile_confirm(
     conn.commit()
     conn.close()
     _audit_action_request(request, "monthly_session_confirm", target_type="school_session", target_id=f"{year}-{month:02d}", actor=user, after={"confirmed": updated})
-    return RedirectResponse(f"/class-control/reconcile?year={year}&month={month}", status_code=303)
+    return RedirectResponse(f"/class-control/reconcile?year={year}&month={month}&saved=1", status_code=303)
 
 
 @app.post("/class-control/session/{session_id}/update")
@@ -6086,7 +6090,7 @@ async def class_control_session_update(
     conn.commit()
     conn.close()
     _audit_action_request(request, "monthly_session_exception", target_type="school_session", target_id=str(session_id), actor=user, after={"status": status, "session_type": session_type, "note": note.strip()})
-    return RedirectResponse(f"/class-control/reconcile?year={year}&month={month}", status_code=303)
+    return RedirectResponse(f"/class-control/reconcile?year={year}&month={month}&saved=1", status_code=303)
 
 
 @app.post("/class-control/session/create")
@@ -6126,7 +6130,7 @@ async def class_control_session_create(
     conn.commit()
     conn.close()
     _audit_action_request(request, "create_extra_session", target_type="school_session", target_id=str(new_id), actor=user, after={"session_type": session_type, "date": session_date, "original_session_id": original_session_id or None})
-    return RedirectResponse(f"/class-control/reconcile?year={return_year}&month={return_month}", status_code=303)
+    return RedirectResponse(f"/class-control/reconcile?year={return_year}&month={return_month}&saved=1", status_code=303)
 
 
 def _render_session_detail_page(request: Request, session_id: int):
