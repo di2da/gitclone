@@ -8943,6 +8943,7 @@ async def invoice_home(request: Request, username: str = Depends(_require_admin_
                 .client-bar {{ display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; align-items: stretch; margin-bottom: 20px; padding: 15px; border: 1px solid #d1d5db; border-radius: 16px; background: #fcfcfb; }}
                 .client-actions {{ display: flex; gap: 10px; margin-top: 2px; flex-wrap: wrap; }}
                 .client-actions > button {{ flex: 1 1 120px; min-width: 0; }}
+                .client-mobile-select {{ display: none; }}
                 .client-picker {{ display: grid; gap: 12px; }}
                 .client-group {{
                     border: 1px solid #d1d5db;
@@ -9031,6 +9032,10 @@ async def invoice_home(request: Request, username: str = Depends(_require_admin_
                     body {{ padding: 14px; }}
                     .hero, .card {{ padding: 18px; border-radius: 20px; }}
                     .quick-links {{ grid-template-columns: 1fr; }}
+                    .client-mobile-select {{ display: grid; gap: 7px; margin-bottom: 14px; padding: 14px; border: 1px solid #d1d5db; border-radius: 16px; background: #fff; }}
+                    .client-mobile-select label {{ margin: 0; }}
+                    .client-mobile-select select {{ min-height: 52px; padding: 0 14px; border-radius: 12px; font-size: 16px; font-weight: 650; }}
+                    .client-picker {{ display: none; }}
                     .client-bar,
                     .preset-bar {{
                         grid-template-columns: 1fr;
@@ -9364,6 +9369,8 @@ async def invoice_home(request: Request, username: str = Depends(_require_admin_
                     const selectedIdField = document.getElementById('common_client_selected_id');
                     const normalizedId = String(clientId || '').trim();
                     if (selectedIdField) selectedIdField.value = normalizedId;
+                    const mobileSelect = document.getElementById('common-client-select-mobile');
+                    if (mobileSelect) mobileSelect.value = [...mobileSelect.options].some((option) => option.value === normalizedId) ? normalizedId : '';
                     document.querySelectorAll('[data-common-client-id]').forEach((button) => {{
                         button.classList.toggle('active', String(button.dataset.commonClientId || '') === normalizedId);
                     }});
@@ -9411,8 +9418,10 @@ async def invoice_home(request: Request, username: str = Depends(_require_admin_
                     const categories = ['小學', '中學', '特殊學校/群育學校', '幼稚園', 'NGO']
                         .filter((category) => grouped.has(category))
                         .concat([...grouped.keys()].filter((category) => !['小學', '中學', '特殊學校/群育學校', '幼稚園', 'NGO'].includes(category)));
+                    const mobileOptions = ['<option value="">— 選擇常用客戶 —</option>'];
                     categories.forEach((category) => {{
                         const clientsInCategory = grouped.get(category) || [];
+                        mobileOptions.push(`<optgroup label="${{escapeHtml(category)}}">${{clientsInCategory.map((client) => `<option value="${{escapeHtml(String(client.id ?? client.name ?? ''))}}">${{escapeHtml(client.name || client.client_name || '未命名客戶')}}</option>`).join('')}}</optgroup>`);
                         const cards = clientsInCategory.map((client) => {{
                             const id = String(client.id ?? client.name ?? '');
                             const title = client.client_name && client.client_name !== client.name
@@ -9443,6 +9452,7 @@ async def invoice_home(request: Request, username: str = Depends(_require_admin_
                         `);
                     }});
                     if (uncategorized.length) {{
+                        mobileOptions.push(`<optgroup label="未分類 / 其他">${{uncategorized.map((client) => `<option value="${{escapeHtml(String(client.id ?? client.name ?? ''))}}">${{escapeHtml(client.name || client.client_name || '未命名客戶')}}</option>`).join('')}}</optgroup>`);
                         const cards = uncategorized.map((client) => {{
                             const id = String(client.id ?? client.name ?? '');
                             const title = client.client_name && client.client_name !== client.name
@@ -9473,6 +9483,17 @@ async def invoice_home(request: Request, username: str = Depends(_require_admin_
                         `);
                     }}
                     wrap.innerHTML = sections.join('');
+                    const mobileSelect = document.getElementById('common-client-select-mobile');
+                    if (mobileSelect) {{
+                        mobileSelect.innerHTML = mobileOptions.join('');
+                        mobileSelect.value = selectedId;
+                        mobileSelect.onchange = () => {{
+                            setSelectedCommonClientId(mobileSelect.value);
+                            const status = document.getElementById('common-client-selected-status');
+                            if (status) status.textContent = mobileSelect.value ? '已選擇一個常用客戶' : '未選擇';
+                            saveDraft();
+                        }};
+                    }}
                     wrap.querySelectorAll('[data-common-client-id]').forEach((button) => {{
                         button.addEventListener('click', () => {{
                             setSelectedCommonClientId(button.dataset.commonClientId || '');
@@ -9646,6 +9667,11 @@ async def invoice_home(request: Request, username: str = Depends(_require_admin_
                                     <button type="button" class="danger" onclick="deleteCommonClient()">刪除</button>
                                 </div>
                             </div>
+                        </div>
+                        <div class="client-mobile-select">
+                            <label for="common-client-select-mobile">選擇常用客戶</label>
+                            <select id="common-client-select-mobile" aria-label="選擇常用客戶"><option value="">— 載入中 —</option></select>
+                            <div class="hint">按類別分組；選擇後再按上方「載入」。</div>
                         </div>
                         <div id="common-client-picker" class="client-picker"></div>
                         <div class="preset-bar">

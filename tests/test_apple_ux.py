@@ -47,6 +47,13 @@ class AppleUxTests(unittest.TestCase):
         self.assertIn("--bg:#FAFAFA", html)
         self.assertIn("今日，由最重要嘅事開始。", html)
 
+    def test_invoice_mobile_common_client_picker_uses_dropdown(self):
+        source = inspect.getsource(docmagic_app.invoice_home)
+        self.assertIn("common-client-select-mobile", source)
+        self.assertIn("client-mobile-select", source)
+        self.assertIn("<optgroup", source)
+        self.assertIn(".client-picker {{ display: none; }}", source)
+
 
 if __name__ == "__main__":
     unittest.main()
