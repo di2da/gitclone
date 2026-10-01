@@ -23,7 +23,8 @@ class AppleUxTests(unittest.TestCase):
         self.assertLess(source.index('<div class="dashboard-head">'), source.index('<section class="cc-card today-focus">'))
         self.assertLess(source.index('<section class="cc-card today-focus">'), source.index("{reminder_html}"))
         self.assertIn("lesson-card", source)
-        self.assertIn("more-tools", source)
+        self.assertIn("tools-section", source)
+        self.assertIn("tool-grid", source)
 
     def test_calendar_has_week_month_and_filters(self):
         source = inspect.getsource(docmagic_app._render_calendar_page)

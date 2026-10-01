@@ -5814,9 +5814,13 @@ def _render_class_control_page(request: Request):
         .lesson-card:hover {{ transform:scale(1.008);box-shadow:0 8px 22px rgba(0,0,0,.08); }} .lesson-card time {{ font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.3px; }}
         .lesson-copy {{ display:grid;gap:4px;min-width:0; }} .lesson-copy strong {{ font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }} .lesson-copy small {{ color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }}
         .status-dot {{ width:10px;height:10px;border-radius:50%; }} .empty-week {{ padding:28px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:16px; }}
-        .more-tools {{ text-align:center;color:var(--muted); }} .more-tools summary {{ min-height:44px;display:inline-flex;align-items:center;cursor:pointer;font-size:13px;list-style:none; }} .more-tools summary::-webkit-details-marker {{ display:none; }}
-        .more-links {{ display:flex;justify-content:center;flex-wrap:wrap;gap:8px;padding-top:10px; }}
-        @media(max-width:560px) {{ .dashboard {{ width:100%;overflow:hidden; }} .dashboard .cc-stats {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} .focus-line {{ font-size:21px; }} .smart-reminder {{ align-items:flex-start;flex-wrap:wrap; }} .reminder-copy {{ min-width:0;flex:1 1 calc(100% - 56px); }} .reminder-cta {{ margin-left:52px; }} .lesson-card {{ grid-template-columns:60px minmax(0,1fr) 10px;padding:14px; }} }}
+        .tools-section {{ margin-top:6px; }} .tools-section h2 {{ margin:0 0 14px;font-size:22px;letter-spacing:-.25px; }}
+        .tool-grid {{ display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px; }}
+        .tool-tile {{ display:flex;align-items:center;gap:12px;min-height:70px;padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.05);color:var(--ink);text-decoration:none;transition:transform 180ms ease-out,box-shadow 180ms ease-out; }}
+        .tool-tile:hover {{ transform:scale(1.018);box-shadow:0 8px 22px rgba(0,0,0,.08); }}
+        .tool-icon {{ display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:12px;background:var(--tile-bg);color:var(--tile-color);font-size:17px;font-weight:800;font-variant-numeric:tabular-nums; }}
+        .tool-label {{ min-width:0;font-size:14px;font-weight:600;line-height:1.25; }} .tool-arrow {{ margin-left:auto;color:#C7C7CC;font-size:18px; }}
+        @media(max-width:560px) {{ .dashboard {{ width:100%;overflow:hidden; }} .dashboard .cc-stats {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} .focus-line {{ font-size:21px; }} .smart-reminder {{ align-items:flex-start;flex-wrap:wrap; }} .reminder-copy {{ min-width:0;flex:1 1 calc(100% - 56px); }} .reminder-cta {{ margin-left:52px; }} .lesson-card {{ grid-template-columns:60px minmax(0,1fr) 10px;padding:14px; }} .tool-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .tool-tile {{ padding:11px;gap:9px; }} .tool-icon {{ width:38px;height:38px;flex-basis:38px; }} }}
     </style>
     <div class="dashboard-head">
         <h1>{greeting}，{html.escape(display_name)} {greeting_icon}</h1>
@@ -5830,7 +5834,14 @@ def _render_class_control_page(request: Request):
         <div class="cc-stat"><strong>{len(month_rows)}</strong><span>本月課堂</span></div>
         <div class="cc-stat"><strong>{pending_makeup}</strong><span>待安排補堂</span></div>
     </div>
-    <details class="more-tools"><summary>發票 · 導師 · 薪酬 · 更多⌄</summary><div class="more-links"><a class="cc-btn" href="/invoice">發票</a><a class="cc-btn" href="/class-control/teachers">導師／代課</a><a class="cc-btn" href="/salary">薪酬</a><a class="cc-btn" href="/class-control/reconcile?year={previous_year}&month={previous_month}">月結核堂</a><a class="cc-btn" href="/school-monitor?year={today.year}&month={today.month}">課堂月報</a><a class="cc-btn" href="/modules">全部功能</a></div></details>
+    <section class="tools-section"><h2>常用工具</h2><div class="tool-grid">
+        <a class="tool-tile" href="/invoice"><span class="tool-icon" style="--tile-bg:#E5F1FF;--tile-color:#0A84FF;">票</span><span class="tool-label">發票</span><span class="tool-arrow">›</span></a>
+        <a class="tool-tile" href="/class-control/teachers"><span class="tool-icon" style="--tile-bg:#E8F9EE;--tile-color:#16853D;">師</span><span class="tool-label">導師／代課</span><span class="tool-arrow">›</span></a>
+        <a class="tool-tile" href="/salary"><span class="tool-icon" style="--tile-bg:#F1EAFE;--tile-color:#7D45C5;">$</span><span class="tool-label">薪酬</span><span class="tool-arrow">›</span></a>
+        <a class="tool-tile" href="/class-control/reconcile?year={previous_year}&month={previous_month}"><span class="tool-icon" style="--tile-bg:#FFF3E0;--tile-color:#C06B00;">✓</span><span class="tool-label">月結核堂</span><span class="tool-arrow">›</span></a>
+        <a class="tool-tile" href="/school-monitor?year={today.year}&month={today.month}"><span class="tool-icon" style="--tile-bg:#FFE9E7;--tile-color:#D93025;">表</span><span class="tool-label">課堂月報</span><span class="tool-arrow">›</span></a>
+        <a class="tool-tile" href="/modules"><span class="tool-icon" style="--tile-bg:#F2F2F7;--tile-color:#636366;">•••</span><span class="tool-label">全部功能</span><span class="tool-arrow">›</span></a>
+    </div></section>
     """
     return _class_control_shell("課堂控制台", body, "dashboard")
 
