@@ -43,6 +43,8 @@ class AppleUxTests(unittest.TestCase):
         self.assertIn("calendar-alert", source)
         self.assertIn("data-density", source)
         self.assertIn("dk_calendar_month_density", source)
+        self.assertIn(".calendar-compact .mobile-agenda", source)
+        self.assertIn("scrollIntoView", source)
 
     def test_login_uses_light_theme(self):
         html = docmagic_app._render_login_page()
