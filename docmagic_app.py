@@ -3658,7 +3658,7 @@ def require_roles(*roles, allow_basic_auth: bool = False):
     return _dep
 
 
-def _render_login_page(error: str = ""):
+def _render_login_page_legacy(error: str = ""):
     error_html = f'<div class="error">{html.escape(error)}</div>' if error else ""
     logo_html = f'<img src="/logo.png" alt="Di2da Dance School">' if (BASE_DIR / "logo.png").exists() else ""
     summary = _get_session_summary()
@@ -4616,6 +4616,17 @@ async def announcements(request: Request):
     return HTMLResponse(_render_announcements_page(request))
 
 
+def _render_login_page(error: str = ""):
+    """Unified light login experience for the Apple-style admin UI."""
+    error_html = f'<div class="login-error">{html.escape(error)}</div>' if error else ""
+    logo_html = '<img src="/logo.png" alt="Di2da Dance School">' if (BASE_DIR / "logo.png").exists() else '<span class="brand-word">DK</span>'
+    summary = _get_session_summary()
+    return f"""<html lang="zh-HK"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{APP_NAME} - 登入</title>
+    <style>
+      :root{{--bg:#FAFAFA;--ink:#1D1D1F;--muted:#86868B;--gold:#B8934A;--line:rgba(29,29,31,.09)}}*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif;-webkit-font-smoothing:antialiased}}.login-wrap{{width:min(900px,100%);display:grid;grid-template-columns:1.05fr .95fr;gap:16px}}.login-intro,.login-panel{{padding:34px;border:1px solid var(--line);border-radius:24px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.05)}}.login-intro{{display:flex;min-height:520px;flex-direction:column;justify-content:space-between}}.brand img{{display:block;max-width:190px;max-height:76px;object-fit:contain}}.brand-word{{font-size:42px;font-weight:800;color:var(--gold)}}.kicker{{color:var(--gold);font-size:12px;font-weight:700;letter-spacing:.14em}}h1{{margin:16px 0 10px;font-size:42px;line-height:1.03;letter-spacing:-1px}}.lead{{max-width:36ch;color:var(--muted);font-size:15px;line-height:1.65}}.summary{{display:grid;grid-template-columns:1fr 1fr;gap:10px}}.summary div{{padding:16px;border-radius:16px;background:#FAFAFA;border:1px solid var(--line)}}.summary strong{{display:block;font-size:24px;font-variant-numeric:tabular-nums}}.summary span{{color:var(--muted);font-size:12px}}.login-panel{{align-self:center}}.login-panel h2{{margin:0 0 7px;font-size:28px;letter-spacing:-.4px}}.login-panel p{{margin:0 0 24px;color:var(--muted);font-size:14px}}label{{display:block;margin:15px 0 7px;color:var(--muted);font-size:12px}}input{{width:100%;min-height:48px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:#FAFAFA;color:var(--ink);font-size:16px;outline:none;transition:border-color 180ms ease-out,box-shadow 180ms ease-out}}input:focus{{border-color:var(--gold);box-shadow:0 0 0 3px rgba(184,147,74,.13)}}button{{width:100%;min-height:48px;margin-top:20px;border:0;border-radius:999px;background:var(--ink);color:#fff;font-size:15px;font-weight:700;cursor:pointer;transition:transform 180ms ease-out,box-shadow 180ms ease-out}}button:hover{{transform:translateY(-1px);box-shadow:0 8px 20px rgba(0,0,0,.15)}}.login-error{{padding:12px 14px;border-radius:12px;background:#FFE9E7;color:#C1241A;font-size:13px}}.privacy{{margin-top:15px;text-align:center;color:var(--muted);font-size:11px}}@media(max-width:760px){{.login-wrap{{grid-template-columns:1fr;max-width:480px}}.login-intro{{min-height:auto;padding:26px}}.login-intro .lead{{margin-bottom:28px}}.login-panel{{padding:26px}}h1{{font-size:34px}}}}
+    </style></head><body><main class="login-wrap"><section class="login-intro"><div><span class="kicker">DK ADMIN V10</span><h1>今日，由最重要嘅事開始。</h1><p class="lead">課堂、核對同待辦集中喺一個清晰畫面；其他功能需要時先出現。</p></div><div><div class="summary"><div><strong>{summary['today']}</strong><span>今日課堂</span></div><div><strong>{summary['week']}</strong><span>本週課堂</span></div></div><div class="brand" style="margin-top:26px">{logo_html}</div></div></section><section class="login-panel"><h2>登入</h2><p>進入軍團行政系統</p>{error_html}<form action="/login" method="post"><label for="username">登入帳戶</label><input id="username" name="username" autocomplete="username" required><label for="password">密碼</label><input id="password" name="password" type="password" autocomplete="current-password" required><button type="submit">登入系統</button></form><div class="privacy">只限獲授權帳戶使用</div></section></main></body></html>"""
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     if _current_user_record(request):
@@ -4788,12 +4799,12 @@ SESSION_TYPE_COLORS = {
 }
 
 STATUS_COLORS = {
-    "已排": ("#166534", "#dcfce7"),
-    "已完成": ("#1d4ed8", "#dbeafe"),
-    "改期": ("#92400e", "#fef3c7"),
-    "取消": ("#991b1b", "#fee2e2"),
-    "取消待補": ("#9a3412", "#ffedd5"),
-    "待確認": ("#4b5563", "#f3f4f6"),
+    "已排": ("#0A84FF", "#E5F1FF"),
+    "已完成": ("#30D158", "#E8F9EE"),
+    "改期": ("#FF9F0A", "#FFF3E0"),
+    "取消": ("#FF453A", "#FFE9E7"),
+    "取消待補": ("#FF453A", "#FFE9E7"),
+    "待確認": ("#FF9F0A", "#FFF3E0"),
 }
 
 
@@ -4819,7 +4830,7 @@ def _school_short_name(full_name: str) -> str:
     return name.strip() or full_name.strip()[:4]
 
 
-def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: int = 0, view: str = "week", school_filter: str = "", teacher_filter: str = "", status_filter: str = "", type_filter: str = ""):
+def _render_calendar_page_legacy(request: Request, week_offset: int = 0, month_offset: int = 0, view: str = "week", school_filter: str = "", teacher_filter: str = "", status_filter: str = "", type_filter: str = ""):
     now = _hk_now()
     csrf_html = _csrf_input_html(request)
     filter_options = _get_calendar_filter_options()
@@ -5148,6 +5159,109 @@ def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: 
         </body>
         </html>
         """
+
+
+def _render_calendar_page(request: Request, week_offset: int = 0, month_offset: int = 0, view: str = "week", school_filter: str = "", teacher_filter: str = "", status_filter: str = "", type_filter: str = ""):
+    """Apple-style calendar presentation while preserving existing data and status actions."""
+    now, today = _hk_now(), _hk_today()
+    csrf_html = _csrf_input_html(request)
+    filter_options = _get_calendar_filter_options()
+    selected = {"school": school_filter, "teacher": teacher_filter, "status": status_filter, "type": type_filter}
+    filters, params = [], []
+    for clause, value in (("sc.name=?", school_filter), ("t.name=?", teacher_filter), ("ss.status=?", status_filter), ("ss.session_type=?", type_filter)):
+        if value.strip():
+            filters.append(clause)
+            params.append(value.strip())
+    where_clause = " AND ".join(filters) if filters else "1=1"
+
+    def query(start: date, end: date):
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(f"""
+            SELECT ss.id,ss.session_date,ss.start_time,ss.end_time,ss.session_type,ss.status,ss.note,
+                   sp.program_name,sc.name AS school_name,COALESCE(t.name,sp.teacher_name_snapshot,'') AS teacher_name
+            FROM school_sessions ss JOIN school_programs sp ON sp.id=ss.program_id
+            LEFT JOIN schools sc ON sc.id=sp.school_id LEFT JOIN teachers t ON t.id=sp.teacher_id
+            WHERE ss.session_date BETWEEN ? AND ? AND sp.is_active=1 AND {where_clause}
+            ORDER BY ss.session_date,ss.start_time,sc.name,sp.program_name
+        """, (start.isoformat(), end.isoformat()) + tuple(params))
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+
+    def keep_query(**extra):
+        values = {key: value for key, value in selected.items() if value}
+        values.update(extra)
+        return urlencode(values)
+
+    def option_list(items, current):
+        return "".join(f'<option value="{html.escape(item, quote=True)}"{" selected" if item == current else ""}>{html.escape(item)}</option>' for item in items)
+
+    def filters_html(current_view, offset_name, offset):
+        return f"""
+        <form method="get" action="/calendar" class="filter-bar">
+          <input type="hidden" name="view" value="{current_view}"><input type="hidden" name="{offset_name}" value="{offset}">
+          <select name="school" onchange="this.form.submit()"><option value="">全部學校</option>{option_list(filter_options['schools'],school_filter)}</select>
+          <select name="teacher" onchange="this.form.submit()"><option value="">全部導師</option>{option_list(filter_options['teachers'],teacher_filter)}</select>
+          <select name="status" onchange="this.form.submit()"><option value="">全部狀態</option>{option_list(['已排','已完成','改期','取消待補','取消','待確認'],status_filter)}</select>
+          <select name="type" onchange="this.form.submit()"><option value="">全部類型</option>{option_list(['課堂','選拔','綵排','表演','補課','加堂','後備日','其他'],type_filter)}</select>
+          <a class="clear-filter" href="/calendar?view={current_view}">✕ 清除篩選</a>
+        </form>"""
+
+    if view == "month":
+        year, month = _class_control_shift_month(today.year, today.month, month_offset)
+        first_day, last_day = _class_control_month_bounds(year, month)
+        start = first_day - timedelta(days=(first_day.weekday() + 1) % 7)
+        end = last_day + timedelta(days=(5 - last_day.weekday()) % 7)
+        rows = query(start, end)
+        grouped = {}
+        for row in rows:
+            grouped.setdefault(row["session_date"], []).append(row)
+        cells, cursor_date = [], start
+        while cursor_date <= end:
+            lessons = grouped.get(cursor_date.isoformat(), [])
+            chips = []
+            for lesson in lessons[:3]:
+                color, background = _apple_status(lesson["status"])
+                chips.append(f'<a class="month-chip" href="/calendar/session/{lesson["id"]}" style="--chip:{color};--chip-bg:{background}"><b>{html.escape((lesson["start_time"] or "")[:5])}</b> {html.escape(_school_short_name(lesson["school_name"] or ""))}</a>')
+            dots = "".join('<i></i>' for _ in lessons[:3])
+            more = f'<span class="more-count">+{len(lessons)-3}</span>' if len(lessons) > 3 else ""
+            classes = "month-cell" + (" today" if cursor_date == today else "") + (" outside" if cursor_date.month != month else "")
+            cells.append(f'<div class="{classes}"><span class="date-number">{cursor_date.day}</span><div class="month-chips">{"".join(chips)}</div><div class="density">{dots}{more}</div></div>')
+            cursor_date += timedelta(days=1)
+        current_month_session_count = sum(1 for row in rows if first_day.isoformat() <= row["session_date"] <= last_day.isoformat())
+        content = f"""
+          <div class="period-head"><div><span class="period-kicker">月視圖</span><h2>{year}年{month}月</h2></div><div class="period-nav"><a aria-label="上月" href="/calendar?view=month&month_offset={month_offset-1}&{keep_query()}">‹</a><a aria-label="下月" href="/calendar?view=month&month_offset={month_offset+1}&{keep_query()}">›</a></div></div>
+          {filters_html('month','month_offset',month_offset)}
+          <div class="weekday-row">{''.join(f'<span>{label}</span>' for label in ['日','一','二','三','四','五','六'])}</div><div class="month-grid">{''.join(cells)}</div>"""
+        total_label = f"本月共 {current_month_session_count} 堂"
+    else:
+        base = today + timedelta(weeks=week_offset)
+        monday, sunday = base - timedelta(days=base.weekday()), base - timedelta(days=base.weekday()) + timedelta(days=6)
+        rows = query(monday, sunday)
+        days = []
+        for index in range(7):
+            day = monday + timedelta(days=index)
+            lesson_cards = []
+            for lesson in [row for row in rows if row["session_date"] == day.isoformat()]:
+                color, background = _apple_status(lesson["status"])
+                status_options = option_list(['已排','已完成','改期','取消待補','取消','待確認'], lesson["status"] or "已排")
+                lesson_cards.append(f"""
+                <article class="week-chip" style="--chip:{color};--chip-bg:{background}" onclick="window.location.href='/calendar/session/{lesson['id']}'">
+                  <a href="/calendar/session/{lesson['id']}"><b>{html.escape((lesson['start_time'] or '')[:5])}</b><span>{html.escape(_school_short_name(lesson['school_name'] or ''))}</span></a>
+                  <form method="post" action="/calendar/session/{lesson['id']}/status" onclick="event.stopPropagation()">{csrf_html}<input type="hidden" name="redirect_view" value="week"><input type="hidden" name="week_offset" value="{week_offset}"><select aria-label="課堂狀態" name="status" onchange="this.form.submit()">{status_options}</select></form>
+                </article>""")
+            days.append(f'<section class="week-day{" today" if day == today else ""}"><header><span>{["一","二","三","四","五","六","日"][index]}</span><strong>{day.day}</strong></header><div class="week-lessons">{"".join(lesson_cards) if lesson_cards else "<span class=no-class>·</span>"}</div></section>')
+        content = f"""
+          <div class="period-head"><div><span class="period-kicker">週視圖 · {monday.month}/{monday.day} – {sunday.month}/{sunday.day}</span></div><div class="period-nav"><a aria-label="上週" href="/calendar?view=week&week_offset={week_offset-1}&{keep_query()}">‹</a><a aria-label="下週" href="/calendar?view=week&week_offset={week_offset+1}&{keep_query()}">›</a></div></div>
+          {filters_html('week','week_offset',week_offset)}<div class="week-scroll"><div class="week-grid">{''.join(days)}</div></div>"""
+        total_label = f"本週共 {len(rows)} 堂"
+
+    return f"""<html lang="zh-HK"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{APP_NAME} - 校曆</title>
+    <style>
+    :root{{--bg:#FAFAFA;--paper:#FFF;--ink:#1D1D1F;--muted:#86868B;--gold:#B8934A;--line:rgba(29,29,31,.09)}}*{{box-sizing:border-box}}html{{background:var(--bg)}}body{{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif;-webkit-font-smoothing:antialiased}}a{{color:inherit}}.container{{max-width:900px;margin:auto;padding:38px 24px 64px}}.top{{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:30px}}h1{{margin:0;font-size:34px;line-height:1.08;letter-spacing:-.5px}}.top-meta{{margin-top:7px;color:var(--muted);font-size:13px}}.top-right{{display:flex;align-items:center;gap:12px}}.back{{min-height:44px;display:flex;align-items:center;text-decoration:none;color:var(--muted);font-size:13px}}.segment{{display:flex;padding:3px;border-radius:10px;background:#E8E8ED}}.segment a{{min-width:48px;min-height:36px;display:grid;place-items:center;border-radius:8px;text-decoration:none;color:var(--muted);font-size:12px;transition:all 180ms ease-out}}.segment a.active{{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.12)}}.period-head{{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}}.period-head h2{{font-size:22px;margin:4px 0 0}}.period-kicker{{color:var(--gold);font-size:12px;font-weight:700}}.period-nav{{display:flex;gap:8px}}.period-nav a{{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:#fff;border:1px solid var(--line);text-decoration:none;font-size:22px;box-shadow:0 1px 4px rgba(0,0,0,.05);transition:transform 180ms ease-out,box-shadow 180ms ease-out}}.period-nav a:hover{{transform:scale(1.06);box-shadow:0 5px 14px rgba(0,0,0,.08)}}.filter-bar{{display:flex;gap:8px;flex-wrap:wrap;padding:12px;margin-bottom:18px;border-radius:16px;background:#fff;border:1px solid var(--line);box-shadow:0 1px 4px rgba(0,0,0,.04)}}.filter-bar select{{min-height:44px;max-width:180px;padding:0 11px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:12px;color:var(--ink)}}.clear-filter{{min-height:44px;display:flex;align-items:center;padding:0 8px;text-decoration:none;color:var(--muted);font-size:12px}}.week-scroll{{overflow-x:auto;padding:2px 2px 12px}}.week-grid{{display:grid;grid-template-columns:repeat(7,minmax(92px,1fr));gap:8px;min-width:700px}}.week-day{{min-height:220px;padding:14px 10px;border-radius:16px;background:#fff;border:1px solid var(--line);box-shadow:0 1px 4px rgba(0,0,0,.05)}}.week-day.today{{box-shadow:0 0 0 2px var(--gold) inset,0 1px 4px rgba(0,0,0,.05)}}.week-day header{{display:grid;text-align:center;gap:5px;margin-bottom:14px}}.week-day header span{{font-size:11px;color:var(--muted)}}.week-day header strong{{font-size:20px;font-variant-numeric:tabular-nums}}.week-day.today header strong{{color:var(--gold)}}.week-lessons{{display:grid;gap:7px}}.week-chip{{padding:8px 7px;border-left:3px solid var(--chip);border-radius:8px;background:var(--chip-bg);cursor:pointer;transition:transform 180ms ease-out}}.week-chip:hover{{transform:scale(1.02)}}.week-chip a{{display:grid;gap:3px;text-decoration:none;font-size:10px}}.week-chip b{{font-size:12px;font-variant-numeric:tabular-nums}}.week-chip span{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.week-chip form{{margin-top:5px}}.week-chip select{{width:100%;border:0;background:transparent;color:var(--chip);font-size:9px;font-weight:700;cursor:pointer}}.no-class{{display:grid;place-items:center;min-height:95px;color:#D2D2D7}}.weekday-row,.month-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}}.weekday-row span{{padding:8px;text-align:center;color:var(--muted);font-size:11px}}.month-cell{{position:relative;min-height:118px;padding:10px;border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.035);transition:transform 180ms ease-out,box-shadow 180ms ease-out}}.month-cell:hover{{transform:scale(1.02);box-shadow:0 7px 18px rgba(0,0,0,.07);z-index:2}}.month-cell.today{{box-shadow:0 0 0 2px var(--gold),0 1px 4px rgba(0,0,0,.04)}}.month-cell.outside{{opacity:.42}}.date-number{{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}}.month-cell.today .date-number{{color:var(--gold)}}.month-chips{{display:grid;gap:4px;margin-top:7px}}.month-chip{{display:block;padding:4px 5px;border-left:3px solid var(--chip);border-radius:5px;background:var(--chip-bg);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none}}.month-chip b{{font-variant-numeric:tabular-nums}}.density{{position:absolute;left:10px;bottom:8px;display:flex;align-items:center;gap:3px}}.density i{{width:4px;height:4px;border-radius:50%;background:var(--gold)}}.more-count{{margin-left:3px;color:var(--gold);font-size:10px;font-weight:700}}@media(max-width:700px){{.container{{padding:24px 16px 48px}}.top{{flex-direction:column;gap:14px}}.top-right{{width:100%;justify-content:space-between}}.filter-bar{{flex-wrap:nowrap;overflow:auto}}.filter-bar select{{min-width:145px}}.month-grid,.weekday-row{{gap:4px}}.month-cell{{min-height:94px;padding:7px}}.month-chip{{font-size:0;padding:3px}}.month-chip b{{font-size:8px}}.density{{left:7px}}}}
+    </style></head><body><main class="container"><div class="top"><div><h1>校曆</h1><div class="top-meta">{total_label}</div></div><div class="top-right"><a class="back" href="/class-control">← 今日</a><nav class="segment"><a class="{'active' if view != 'month' else ''}" href="/calendar?view=week">週</a><a class="{'active' if view == 'month' else ''}" href="/calendar?view=month">月</a></nav></div></div>{content}</main></body></html>"""
 
 
 @app.get("/calendar", response_class=HTMLResponse)
@@ -5499,7 +5613,28 @@ def _class_control_type_badge(session_type: str):
     return f'<span class="cc-badge" style="color:{color};background:{background};">{html.escape(value)}</span>'
 
 
-def _class_control_shell(title: str, body: str):
+_WEEKDAY_ZH = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+
+
+def _human_date_label(target: date, today: Optional[date] = None) -> str:
+    today = today or _hk_today()
+    delta = (target - today).days
+    if delta == 0:
+        return "今日"
+    if delta == 1:
+        return "聽日"
+    if delta == 2:
+        return "後日"
+    if 3 <= delta <= 9:
+        return f"下{_WEEKDAY_ZH[target.weekday()]}"
+    return f"{target.month}月{target.day}日 · {_WEEKDAY_ZH[target.weekday()]}"
+
+
+def _apple_status(status: str) -> tuple[str, str]:
+    return STATUS_COLORS.get((status or "已排").strip(), ("#0A84FF", "#E5F1FF"))
+
+
+def _class_control_shell(title: str, body: str, page_class: str = ""):
     return f"""
     <html lang="zh-HK">
     <head>
@@ -5507,22 +5642,27 @@ def _class_control_shell(title: str, body: str):
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>{APP_NAME} - {html.escape(title)}</title>
         <style>
-            :root {{ --bg:#f5f1e8; --paper:#fff; --ink:#111; --muted:#69707d; --line:#e5e7eb; --gold:#b89d5d; --gold-soft:#f4ead2; }}
+            :root {{ --bg:#FAFAFA; --paper:#FFFFFF; --ink:#1D1D1F; --muted:#86868B; --line:rgba(29,29,31,.09); --gold:#B8934A; --gold-soft:#FBF5E8; --green:#30D158; --blue:#0A84FF; --orange:#FF9F0A; --red:#FF453A; }}
             * {{ box-sizing:border-box; }}
-            body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif; background:var(--bg); color:var(--ink); }}
-            .cc-wrap {{ max-width:1320px; margin:0 auto; padding:22px; }}
-            .cc-top {{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }}
-            .cc-top h1 {{ margin:0 0 5px; font-size:25px; }}
+            html {{ background:var(--bg); }}
+            body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; }}
+            button,input,select,textarea {{ font:inherit; }}
+            .cc-wrap {{ max-width:900px; margin:0 auto; padding:38px 24px 64px; }}
+            .cc-wrap.dashboard {{ max-width:720px; }}
+            .cc-top {{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:28px; }}
+            .cc-top h1 {{ margin:0 0 6px; font-size:34px; line-height:1.08; letter-spacing:-.5px; }}
             .cc-muted {{ color:var(--muted); font-size:13px; line-height:1.55; }}
             .cc-actions {{ display:flex; gap:8px; flex-wrap:wrap; }}
-            .cc-btn {{ display:inline-block; padding:9px 13px; border-radius:10px; border:1px solid var(--line); background:#fff; color:#111; text-decoration:none; font-size:13px; cursor:pointer; }}
-            .cc-btn.primary {{ background:#111; color:#fff; border-color:#111; }}
+            .cc-btn {{ display:inline-flex; min-height:44px; align-items:center; justify-content:center; padding:10px 15px; border-radius:999px; border:1px solid var(--line); background:#fff; color:var(--ink); text-decoration:none; font-size:13px; cursor:pointer; transition:transform 180ms ease-out,box-shadow 180ms ease-out,background 180ms ease-out; }}
+            .cc-btn:hover {{ transform:translateY(-1px); box-shadow:0 5px 16px rgba(0,0,0,.07); }}
+            .cc-btn.primary {{ background:var(--ink); color:#fff; border-color:var(--ink); }}
             .cc-btn.gold {{ background:var(--gold); color:#fff; border-color:var(--gold); }}
-            .cc-stats {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px; }}
-            .cc-stat, .cc-card {{ background:var(--paper); border:1px solid var(--line); border-radius:16px; padding:17px; }}
-            .cc-stat strong {{ display:block; font-size:27px; margin-bottom:4px; }}
+            .cc-stats {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:36px; }}
+            .cc-stat, .cc-card {{ background:var(--paper); border:1px solid var(--line); border-radius:16px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,.05); }}
+            .cc-stat strong {{ display:block; font-size:24px; font-variant-numeric:tabular-nums; letter-spacing:-.4px; margin-bottom:4px; }}
+            .cc-stat span {{ color:var(--muted); font-size:12px; }}
             .cc-card {{ margin-bottom:16px; }}
-            .cc-card h2 {{ margin:0 0 12px; font-size:17px; }}
+            .cc-card h2 {{ margin:0 0 12px; font-size:22px; letter-spacing:-.25px; }}
             .cc-grid {{ display:grid; grid-template-columns:1.3fr .7fr; gap:16px; align-items:start; }}
             .cc-table-wrap {{ overflow:auto; border:1px solid var(--line); border-radius:12px; }}
             .cc-table {{ width:100%; border-collapse:collapse; min-width:780px; background:#fff; }}
@@ -5537,14 +5677,15 @@ def _class_control_shell(title: str, body: str):
             .cc-field {{ display:grid; gap:4px; min-width:125px; flex:1; }}
             .cc-field label {{ font-size:12px; color:var(--muted); }}
             .cc-field input, .cc-field select, .cc-field textarea {{ width:100%; padding:9px 10px; border:1px solid #d1d5db; border-radius:9px; background:#fff; font-size:13px; }}
+            .cc-form-row > input, .cc-form-row > select {{ min-height:44px; }}
             .cc-field textarea {{ min-height:70px; resize:vertical; }}
-            .cc-alert {{ padding:12px 14px; border-radius:12px; background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; font-size:13px; margin-bottom:14px; }}
+            .cc-alert {{ padding:14px 16px; border-radius:16px; background:#FFF3E0; border:1px solid rgba(255,159,10,.2); color:#9A5A00; font-size:13px; margin-bottom:16px; }}
             .cc-ok {{ padding:12px 14px; border-radius:12px; background:#ecfdf5; border:1px solid #a7f3d0; color:#166534; font-size:13px; margin-bottom:14px; }}
             @media (max-width:900px) {{ .cc-grid {{ grid-template-columns:1fr; }} .cc-stats {{ grid-template-columns:repeat(2,1fr); }} .cc-top {{ flex-direction:column; }} }}
-            @media (max-width:560px) {{ .cc-wrap {{ padding:12px; }} .cc-stats {{ grid-template-columns:1fr 1fr; gap:8px; }} .cc-stat {{ padding:12px; }} .cc-stat strong {{ font-size:22px; }} }}
+            @media (max-width:560px) {{ .cc-wrap {{ padding:24px 16px 48px; }} .cc-stats {{ grid-template-columns:repeat(2,1fr); gap:8px; }} .cc-stat {{ padding:14px 10px; }} .cc-stat strong {{ font-size:22px; }} .cc-top h1 {{ font-size:30px; }} }}
         </style>
     </head>
-    <body><main class="cc-wrap">{body}</main></body>
+    <body><main class="cc-wrap {html.escape(page_class, quote=True)}">{body}</main></body>
     </html>
     """
 
@@ -5574,7 +5715,8 @@ def _class_control_session_query(start_date: date, end_date: date):
 
 
 def _render_class_control_page(request: Request):
-    today = _hk_today()
+    now = _hk_now()
+    today = now.date()
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
     month_start, month_end = _class_control_month_bounds(today.year, today.month)
@@ -5587,61 +5729,110 @@ def _render_class_control_page(request: Request):
     previous_rows = _class_control_session_query(previous_start, previous_end)
     pending_previous = sum(1 for row in previous_rows if row["status"] in {"已排", "待確認"})
     pending_makeup = sum(1 for row in month_rows + previous_rows if row["status"] == "取消待補")
+    future_rows = _class_control_session_query(today, today + timedelta(days=60))
+    next_row = next((row for row in future_rows if row["status"] not in {"取消", "取消待補"} and (
+        row["session_date"] > today.isoformat() or (row["start_time"] or "23:59")[:5] >= now.strftime("%H:%M")
+    )), None)
+    user = _current_user_record(request)
+    display_name = "Tat Sir" if user and (user[1] or "").lower() == "admin" else _current_display_name(request)
+    if now.hour < 12:
+        greeting, greeting_icon = "早晨", "☀️"
+    elif now.hour < 18:
+        greeting, greeting_icon = "午安", "🌤️"
+    else:
+        greeting, greeting_icon = "晚安", "🌙"
 
-    def row_html(row, include_date=True):
-        date_cell = f'<td>{html.escape(row["session_date"] or "")}</td>' if include_date else ""
-        return f"""
-        <tr>
-            {date_cell}
-            <td>{html.escape((row['start_time'] or '').strip()[:5])}</td>
-            <td><strong>{html.escape(row['school_name'] or '-')}</strong><div class="cc-muted">{html.escape(row['program_name'] or '-')}</div></td>
-            <td>{html.escape(row['teacher_name'] or '未配對')}</td>
-            <td>{_class_control_type_badge(row['session_type'])}</td>
-            <td>{_class_control_status_badge(row['status'])}</td>
-            <td><a class="cc-btn" href="/calendar/session/{row['id']}">詳情</a></td>
-        </tr>"""
+    active_today = [row for row in today_rows if row["status"] not in {"取消", "取消待補"}]
+    if active_today:
+        focus_sentence = f"今日有 {len(active_today)} 堂課，安排已經準備好。"
+    else:
+        focus_sentence = "今日冇課堂，可以專心處理其他嘢。"
+    if next_row:
+        next_date = datetime.strptime(next_row["session_date"], "%Y-%m-%d").date()
+        next_sentence = "下一堂係 {} {} · {} · {} · {}".format(
+            _human_date_label(next_date, today),
+            html.escape((next_row["start_time"] or "")[:5]),
+            html.escape(next_row["school_name"] or "未填學校"),
+            html.escape(next_row["program_name"] or "未填班別"),
+            html.escape(next_row["teacher_name"] or "未配對導師"),
+        )
+    else:
+        next_sentence = "未來 60 日暫時冇已排課堂。"
 
-    today_table = "".join(row_html(row, include_date=False) for row in today_rows)
-    week_table = "".join(row_html(row, include_date=True) for row in week_rows)
+    reminder_html = ""
+    if pending_previous:
+        days_left = max(0, 3 - today.day)
+        deadline_text = f"仲有 {days_left} 日" if days_left else "請盡快處理"
+        reminder_html = f"""
+        <a class="smart-reminder" href="/class-control/reconcile?year={previous_year}&month={previous_month}">
+            <span class="reminder-icon">✓</span><span class="reminder-copy"><strong>{previous_month}月核對就嚟截止</strong><small>{pending_previous} 堂待確認 · {deadline_text}</small></span><span class="reminder-cta">一鍵核對</span>
+        </a>"""
+    elif pending_makeup:
+        reminder_html = f"""
+        <a class="smart-reminder" href="/class-control/reconcile?year={today.year}&month={today.month}">
+            <span class="reminder-icon">↻</span><span class="reminder-copy"><strong>有 {pending_makeup} 堂仍待安排補堂</strong><small>完成安排後，原課堂會自動保留關聯。</small></span><span class="reminder-cta">處理補堂</span>
+        </a>"""
+
+    grouped_week = []
+    for day_index in range(7):
+        current_day = monday + timedelta(days=day_index)
+        day_rows = [row for row in week_rows if row["session_date"] == current_day.isoformat()]
+        if not day_rows:
+            continue
+        cards = []
+        for row in day_rows:
+            color, _ = _apple_status(row["status"])
+            cards.append(f"""
+            <a class="lesson-card" href="/calendar/session/{row['id']}">
+                <time>{html.escape((row['start_time'] or '待定')[:5])}</time>
+                <span class="lesson-copy"><strong>{html.escape(row['school_name'] or '-')}</strong><small>{html.escape(row['program_name'] or '-')} · {html.escape(row['teacher_name'] or '未配對導師')}</small></span>
+                <span class="status-dot" style="background:{color}" title="{html.escape(row['status'] or '已排')}"></span>
+            </a>""")
+        day_label = _WEEKDAY_ZH[current_day.weekday()] if current_day < today else _human_date_label(current_day, today)
+        grouped_week.append(f"""
+        <div class="day-group"><div class="day-label"><strong>{day_label}</strong><span>{current_day.month}月{current_day.day}日</span></div>{''.join(cards)}</div>""")
+
     body = f"""
-    <div class="cc-top">
-        <div><h1>學校課堂控制台</h1><div class="cc-muted">平日只睇安排；每月月初一次過核對上月課堂。</div></div>
-        <div class="cc-actions">
-            <a class="cc-btn" href="/modules">其他功能</a>
-            <a class="cc-btn" href="/invoice">發票</a>
-            <a class="cc-btn" href="/calendar?view=month">完整校曆</a>
-            <a class="cc-btn primary" href="/class-control/teachers">導師／代課</a>
-        </div>
+    <style>
+        .dashboard-head {{ margin-bottom:28px; }}
+        .dashboard .cc-stats {{ grid-template-columns:repeat(3,minmax(0,1fr)); }}
+        .dashboard .cc-stat {{ min-width:0; }}
+        .dashboard-head h1 {{ margin:0 0 7px;font-size:34px;line-height:1.08;letter-spacing:-.5px; }}
+        .today-focus {{ padding:22px;border-radius:20px;margin-bottom:12px; }}
+        .eyebrow {{ display:block;color:var(--muted);font-size:13px;font-weight:700;letter-spacing:.08em;margin-bottom:12px; }}
+        .focus-line {{ margin:0 0 9px;font-size:24px;line-height:1.25;letter-spacing:-.4px; }}
+        .focus-sub {{ margin:0;color:var(--muted);font-size:14px;line-height:1.55; }}
+        .smart-reminder {{ display:flex;align-items:center;gap:14px;padding:20px;margin:0 0 36px;border-radius:20px;color:white;text-decoration:none;background:linear-gradient(135deg,#B8934A,#D4AF6E);box-shadow:0 5px 18px rgba(184,147,74,.22);transition:transform 180ms ease-out,box-shadow 180ms ease-out; }}
+        .smart-reminder:hover {{ transform:translateY(-2px);box-shadow:0 10px 28px rgba(184,147,74,.3); }}
+        .reminder-icon {{ display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.18);font-size:20px;flex:0 0 auto; }}
+        .reminder-copy {{ display:grid;gap:3px;min-width:0;flex:1; }} .reminder-copy strong {{ font-size:17px; }} .reminder-copy small {{ color:rgba(255,255,255,.82);font-size:13px; }}
+        .reminder-cta {{ flex:0 0 auto;padding:10px 14px;border-radius:999px;background:#fff;color:#8b6725;font-size:13px;font-weight:700; }}
+        .section-head {{ display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 14px; }} .section-head h2 {{ margin:0;font-size:22px;letter-spacing:-.25px; }}
+        .section-head a {{ color:var(--gold);text-decoration:none;font-size:13px;min-height:44px;display:flex;align-items:center; }}
+        .week-list {{ display:grid;gap:24px;margin-bottom:36px; }} .day-label {{ display:flex;align-items:baseline;gap:8px;margin-bottom:9px; }} .day-label strong {{ font-size:15px; }} .day-label span {{ color:var(--muted);font-size:12px; }}
+        .lesson-card {{ display:grid;grid-template-columns:72px 1fr 10px;align-items:center;gap:14px;min-height:74px;padding:15px 18px;margin-bottom:10px;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.05);color:var(--ink);text-decoration:none;transition:transform 180ms ease-out,box-shadow 180ms ease-out; }}
+        .lesson-card:hover {{ transform:scale(1.008);box-shadow:0 8px 22px rgba(0,0,0,.08); }} .lesson-card time {{ font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.3px; }}
+        .lesson-copy {{ display:grid;gap:4px;min-width:0; }} .lesson-copy strong {{ font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }} .lesson-copy small {{ color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }}
+        .status-dot {{ width:10px;height:10px;border-radius:50%; }} .empty-week {{ padding:28px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:16px; }}
+        .more-tools {{ text-align:center;color:var(--muted); }} .more-tools summary {{ min-height:44px;display:inline-flex;align-items:center;cursor:pointer;font-size:13px;list-style:none; }} .more-tools summary::-webkit-details-marker {{ display:none; }}
+        .more-links {{ display:flex;justify-content:center;flex-wrap:wrap;gap:8px;padding-top:10px; }}
+        @media(max-width:560px) {{ .dashboard {{ width:100%;overflow:hidden; }} .dashboard .cc-stats {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} .focus-line {{ font-size:21px; }} .smart-reminder {{ align-items:flex-start;flex-wrap:wrap; }} .reminder-copy {{ min-width:0;flex:1 1 calc(100% - 56px); }} .reminder-cta {{ margin-left:52px; }} .lesson-card {{ grid-template-columns:60px minmax(0,1fr) 10px;padding:14px; }} }}
+    </style>
+    <div class="dashboard-head">
+        <h1>{greeting}，{html.escape(display_name)} {greeting_icon}</h1>
+        <div class="cc-muted">今日 · {today.month}月{today.day}日 {_WEEKDAY_ZH[today.weekday()]}</div>
     </div>
+    <section class="cc-card today-focus"><span class="eyebrow">今日</span><h2 class="focus-line">{focus_sentence}</h2><p class="focus-sub">{next_sentence}</p></section>
+    {reminder_html}
+    <section><div class="section-head"><h2>本週</h2><a href="/calendar?view=week">完整校曆 →</a></div><div class="week-list">{''.join(grouped_week) if grouped_week else '<div class="empty-week">本週暫時冇課堂。</div>'}</div></section>
     <div class="cc-stats">
-        <div class="cc-stat"><strong>{len(today_rows)}</strong><span>今日課堂</span></div>
         <div class="cc-stat"><strong>{len(week_rows)}</strong><span>本週課堂</span></div>
         <div class="cc-stat"><strong>{len(month_rows)}</strong><span>本月課堂</span></div>
         <div class="cc-stat"><strong>{pending_makeup}</strong><span>待安排補堂</span></div>
     </div>
-    {f'<div class="cc-alert"><strong>{previous_year}年{previous_month}月仍有 {pending_previous} 堂未核對。</strong> 你毋須每日處理；月初一次過確認即可。 <a href="/class-control/reconcile?year={previous_year}&month={previous_month}">開始月結核堂 →</a></div>' if pending_previous else f'<div class="cc-ok">{previous_year}年{previous_month}月課堂已完成核對。</div>'}
-    <div class="cc-grid">
-        <section>
-            <div class="cc-card">
-                <h2>今日 · {today.month}月{today.day}日</h2>
-                <div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>時間</th><th>學校／班別</th><th>導師</th><th>類型</th><th>狀態</th><th></th></tr></thead><tbody>{today_table or '<tr><td colspan="6" class="cc-muted">今日沒有課堂。</td></tr>'}</tbody></table></div>
-            </div>
-            <div class="cc-card">
-                <h2>本週 · {monday.month}/{monday.day}–{sunday.month}/{sunday.day}</h2>
-                <div class="cc-table-wrap"><table class="cc-table"><thead><tr><th>日期</th><th>時間</th><th>學校／班別</th><th>導師</th><th>類型</th><th>狀態</th><th></th></tr></thead><tbody>{week_table or '<tr><td colspan="7" class="cc-muted">本週沒有課堂。</td></tr>'}</tbody></table></div>
-            </div>
-        </section>
-        <aside>
-            <div class="cc-card"><h2>每月處理</h2><div class="cc-list">
-                <a class="cc-list-item" href="/class-control/reconcile?year={previous_year}&month={previous_month}" style="text-decoration:none;color:inherit;"><strong>核對 {previous_year}年{previous_month}月</strong><div class="cc-muted">正常課堂一鍵確認，只處理例外。</div></a>
-                <a class="cc-list-item" href="/class-control/reconcile?year={today.year}&month={today.month}" style="text-decoration:none;color:inherit;"><strong>記錄突發／補堂／加堂</strong><div class="cc-muted">取消與補堂會保留關聯。</div></a>
-                <a class="cc-list-item" href="/school-monitor?year={today.year}&month={today.month}" style="text-decoration:none;color:inherit;"><strong>查看課堂月報</strong><div class="cc-muted">學校、導師及完成率。</div></a>
-            </div></div>
-            <div class="cc-card"><h2>原則</h2><div class="cc-muted">導師毋須在本系統打卡。系統以原定校曆為基礎；你只需在月底確認正常課堂，並記錄取消、補堂及加堂等例外。</div></div>
-        </aside>
-    </div>
+    <details class="more-tools"><summary>發票 · 導師 · 薪酬 · 更多⌄</summary><div class="more-links"><a class="cc-btn" href="/invoice">發票</a><a class="cc-btn" href="/class-control/teachers">導師／代課</a><a class="cc-btn" href="/salary">薪酬</a><a class="cc-btn" href="/class-control/reconcile?year={previous_year}&month={previous_month}">月結核堂</a><a class="cc-btn" href="/school-monitor?year={today.year}&month={today.month}">課堂月報</a><a class="cc-btn" href="/modules">全部功能</a></div></details>
     """
-    return _class_control_shell("課堂控制台", body)
+    return _class_control_shell("課堂控制台", body, "dashboard")
 
 
 @app.get("/class-control", response_class=HTMLResponse)
