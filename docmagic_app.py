@@ -199,11 +199,14 @@ async def _security_gate_middleware(request: Request, call_next):
                     return Response("Forbidden", status_code=403)
 
     response = await call_next(request)
-    if (
+    should_persist = (
         unsafe_method
         and response.status_code < 500
         and request.url.path not in {"/login", "/logout", "/api/db/query"}
-    ):
+    )
+    if request.url.path.startswith("/api/media/jobs/"):
+        should_persist = should_persist and bool(getattr(request.state, "blob_db_dirty", False))
+    if should_persist:
         try:
             persisted = _persist_blob_database()
         except Exception:
@@ -5071,11 +5074,14 @@ async def media_worker_claim(request: Request):
     conn = _bootstrap_sqlite_connect(DB_PATH)
     cursor = conn.cursor(); cursor.execute("BEGIN IMMEDIATE")
     cursor.execute("UPDATE media_jobs SET status='queued',worker_id=NULL,started_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE status='processing' AND started_at < datetime('now','-45 minutes')")
+    changed = cursor.rowcount
     cursor.execute("SELECT id,job_token,source_url,output_format,requested_by FROM media_jobs WHERE status='queued' ORDER BY id LIMIT 1")
     row = cursor.fetchone()
     if row:
         cursor.execute("UPDATE media_jobs SET status='processing',worker_id=?,started_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP,error=NULL WHERE id=?", (worker_id,row[0]))
+        changed += cursor.rowcount
     conn.commit(); conn.close()
+    request.state.blob_db_dirty = bool(changed)
     job = None if not row else {"id":row[0],"job_token":row[1],"source_url":row[2],"output_format":row[3],"requested_by":row[4]}
     return Response(json.dumps({"ok":True,"job":job}, ensure_ascii=False), media_type="application/json")
 
@@ -5091,6 +5097,7 @@ async def media_worker_complete(request: Request, job_token: str):
         "completed" if ok else "failed", str(payload.get("source_title") or "")[:300], str(payload.get("output_name") or "")[:300], int(payload.get("output_size_bytes") or 0), str(payload.get("blob_pathname") or "")[:800] if ok else "", 1 if ok else 0, "" if ok else str(payload.get("error") or "Unknown worker error")[:1000], job_token,
     ))
     changed = cursor.rowcount; conn.commit(); conn.close()
+    request.state.blob_db_dirty = bool(changed)
     return Response(json.dumps({"ok":bool(changed)}), media_type="application/json", status_code=200 if changed else 404)
 
 
@@ -5108,6 +5115,7 @@ async def media_worker_retry(request: Request):
     cursor.execute("UPDATE media_jobs SET status='queued',error=NULL,worker_id=NULL,started_at=NULL,completed_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='failed'", (job_id,))
     changed = cursor.rowcount
     conn.commit(); conn.close()
+    request.state.blob_db_dirty = bool(changed)
     return Response(json.dumps({"ok":bool(changed)}), media_type="application/json", status_code=200 if changed else 404)
 
 
@@ -5146,6 +5154,7 @@ async def media_worker_expired_confirm(request: Request):
     )
     changed = cursor.rowcount
     conn.commit(); conn.close()
+    request.state.blob_db_dirty = bool(changed)
     return Response(json.dumps({"ok": bool(changed)}), media_type="application/json", status_code=200 if changed else 404)
 
 

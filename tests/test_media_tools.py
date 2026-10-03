@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from starlette.requests import Request
+from starlette.responses import Response
 from fastapi import HTTPException
 
 import docmagic_app
@@ -64,6 +65,55 @@ class MediaToolsTests(unittest.TestCase):
         source = inspect.getsource(docmagic_app._security_gate_middleware)
         self.assertIn('request.url.path.startswith("/api/media/jobs/")', source)
         self.assertIn("_media_worker_authorized", source)
+
+    def test_idle_worker_poll_does_not_persist_blob_database(self):
+        request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/api/media/jobs/claim",
+                "headers": [(b"content-type", b"application/json")],
+                "query_string": b"",
+                "server": ("test", 80),
+                "client": ("test", 1),
+                "scheme": "https",
+            }
+        )
+
+        async def idle_response(_request):
+            return Response("{}", media_type="application/json")
+
+        with patch.object(docmagic_app, "DB_IS_EPHEMERAL", False), \
+             patch.object(docmagic_app, "_media_worker_authorized", return_value=True), \
+             patch.object(docmagic_app, "_persist_blob_database") as persist:
+            response = asyncio.run(docmagic_app._security_gate_middleware(request, idle_response))
+        self.assertEqual(response.status_code, 200)
+        persist.assert_not_called()
+
+    def test_changed_worker_request_persists_blob_database(self):
+        request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/api/media/jobs/claim",
+                "headers": [(b"content-type", b"application/json")],
+                "query_string": b"",
+                "server": ("test", 80),
+                "client": ("test", 1),
+                "scheme": "https",
+            }
+        )
+
+        async def changed_response(worker_request):
+            worker_request.state.blob_db_dirty = True
+            return Response("{}", media_type="application/json")
+
+        with patch.object(docmagic_app, "DB_IS_EPHEMERAL", False), \
+             patch.object(docmagic_app, "_media_worker_authorized", return_value=True), \
+             patch.object(docmagic_app, "_persist_blob_database", return_value=True) as persist:
+            response = asyncio.run(docmagic_app._security_gate_middleware(request, changed_response))
+        self.assertEqual(response.status_code, 200)
+        persist.assert_called_once_with()
 
     def test_failed_jobs_can_be_retried_without_resubmitting_url(self):
         page_source = inspect.getsource(docmagic_app._render_media_tools_page)
