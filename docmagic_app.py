@@ -61,13 +61,35 @@ except Exception:
     PYPDF_AVAILABLE = False
 
 app = FastAPI()
-@app.exception_handler(Exception)
-async def debug_exception_handler(request: Request, exc: Exception):
-    import traceback
+
+
+def _internal_server_error_response(request: Request, exc: Exception):
+    if _is_production():
+        request_id = html.escape(str(getattr(request.state, "request_id", "") or ""))
+        reference = f"<p>參考編號：{request_id}</p>" if request_id else ""
+        return HTMLResponse(
+            content=(
+                "<html><body style='font-family:sans-serif;padding:20px;'>"
+                "<h1>系統暫時未能完成操作</h1>"
+                "<p>資料未有儲存，請返回上一頁後再試。</p>"
+                f"{reference}</body></html>"
+            ),
+            status_code=500,
+        )
     return HTMLResponse(
-        content=f"<html><body style='font-family:sans-serif;padding:20px;'><h1>Internal Server Error (Debug)</h1><p><b>Error:</b> {html.escape(str(exc))}</p><pre style='background:#eee;padding:10px;border-radius:5px;'>{html.escape(traceback.format_exc())}</pre></body></html>",
-        status_code=500
+        content=(
+            "<html><body style='font-family:sans-serif;padding:20px;'>"
+            "<h1>Internal Server Error (Debug)</h1>"
+            f"<p><b>Error:</b> {html.escape(str(exc))}</p>"
+            f"<pre>{html.escape(traceback.format_exc())}</pre></body></html>"
+        ),
+        status_code=500,
     )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    return _internal_server_error_response(request, exc)
 security = HTTPBasic(auto_error=False)
 BASE_DIR = Path(__file__).resolve().parent
 PANTENE_FOODIE_DIR = BASE_DIR / "projects" / "pantene-foodie-journey"
@@ -86,15 +108,6 @@ SCRC_ORG_ADDRESS_LINES = [
 SCRC_SIGNATORY_DEFAULT = "廖成達校長"
 SCRC_SIGNATURE_PNG = BASE_DIR / "signature.png"
 SCRC_STAMP_PNG = BASE_DIR / "stamp.png"
-
-
-@app.exception_handler(Exception)
-async def debug_exception_handler(request: Request, exc: Exception):
-    import traceback
-    return HTMLResponse(
-        content=f"<html><body><h1>Internal Server Error (Debug)</h1><pre>{html.escape(traceback.format_exc())}</pre></body></html>",
-        status_code=500
-    )
 
 @app.middleware("http")
 async def _db_server_mode_middleware(request: Request, call_next):
@@ -12388,8 +12401,8 @@ async def handle_generate(
 
         return Response(content=pdf_content, media_type="application/pdf", 
                         headers={"Content-Disposition": f"attachment; filename={doc_no}.pdf"})
-    except Exception:
-        return HTMLResponse(content=f"<pre>{traceback.format_exc()}</pre>", status_code=500)
+    except Exception as exc:
+        return _internal_server_error_response(request, exc)
 
 @app.get("/api/presets")
 async def list_form_presets(username: str = Depends(_require_admin_username)):
@@ -16151,45 +16164,71 @@ async def salary_teacher_new_save(
     is_active: Optional[str] = Form(None),
     user: tuple = Depends(require_roles("admin")),
 ):
+    clean_name = name.strip()
+    if not clean_name:
+        return HTMLResponse(
+            f"{SALARY_HEADER}<div class='container'><div class='card'><h3>未能新增導師</h3><p>請輸入中文姓名。</p><br><a href='/salary/teachers/new' class='btn btn-primary'>返回新增導師</a></div></div>{SALARY_FOOTER}",
+            status_code=422,
+        )
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute(
-        """
-        INSERT INTO teachers (
-            name, email, data_consent, english_name, stage_name, instagram, phone, area, bank_name, bank_account_number,
-            bank_holder_name, fps_id, dance_styles, teaching_targets, experience, bio, car_plate, teaching_availability,
-            extra_work, scnc_result, remarks, is_active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            name.strip(),
-            email.strip(),
-            _teacher_csv_text(data_consent),
-            english_name.strip(),
-            stage_name.strip(),
-            instagram.strip(),
-            phone.strip(),
-            area.strip(),
-            bank_name.strip(),
-            bank_account_number.strip(),
-            bank_holder_name.strip(),
-            fps_id.strip(),
-            _teacher_csv_text(dance_styles),
-            _teacher_csv_text(teaching_targets),
-            experience.strip(),
-            bio.strip(),
-            car_plate.strip(),
-            _teacher_csv_text(teaching_availability),
-            _teacher_csv_text(extra_work),
-            scnc_result.strip(),
-            remarks.strip(),
-            1 if is_active else 0,
-        ),
-    )
-    conn.commit()
-    tid = cursor.lastrowid
-    conn.close()
-    _audit_action_request(request, "teacher_create", target_type="teacher", target_id=str(tid), actor=user, after={"name": name.strip(), "email": email.strip(), "english_name": english_name.strip(), "stage_name": stage_name.strip()})
+    try:
+        cursor.execute(
+            """
+            INSERT INTO teachers (
+                name, email, data_consent, english_name, stage_name, instagram, phone, area, bank_name, bank_account_number,
+                bank_holder_name, fps_id, dance_styles, teaching_targets, experience, bio, car_plate, teaching_availability,
+                extra_work, scnc_result, remarks, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                clean_name,
+                email.strip(),
+                _teacher_csv_text(data_consent),
+                english_name.strip(),
+                stage_name.strip(),
+                instagram.strip(),
+                phone.strip(),
+                area.strip(),
+                bank_name.strip(),
+                bank_account_number.strip(),
+                bank_holder_name.strip(),
+                fps_id.strip(),
+                _teacher_csv_text(dance_styles),
+                _teacher_csv_text(teaching_targets),
+                experience.strip(),
+                bio.strip(),
+                car_plate.strip(),
+                _teacher_csv_text(teaching_availability),
+                _teacher_csv_text(extra_work),
+                scnc_result.strip(),
+                remarks.strip(),
+                1 if is_active else 0,
+            ),
+        )
+        conn.commit()
+        tid = cursor.lastrowid
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        if "teachers.name" not in str(exc):
+            raise
+        _audit_action_request(
+            request,
+            "teacher_create",
+            target_type="teacher",
+            target_id="",
+            result="denied",
+            actor=user,
+            after={"name": clean_name},
+            metadata={"reason": "duplicate_name"},
+        )
+        return HTMLResponse(
+            f"{SALARY_HEADER}<div class='container'><div class='card'><h3>未能新增導師</h3><p>系統已經有同名導師：<strong>{html.escape(clean_name)}</strong></p><p>請返回導師列表搜尋並編輯現有資料；如屬另一位同名導師，請先加入可識別標記。</p><br><a href='/salary/teachers' class='btn btn-primary'>返回導師列表</a> <a href='/salary/teachers/new' class='btn btn-outline'>重新輸入</a></div></div>{SALARY_FOOTER}",
+            status_code=409,
+        )
+    finally:
+        conn.close()
+    _audit_action_request(request, "teacher_create", target_type="teacher", target_id=str(tid), actor=user, after={"name": clean_name, "email": email.strip(), "english_name": english_name.strip(), "stage_name": stage_name.strip()})
     return HTMLResponse(
         f"{SALARY_HEADER}<div class='container'><div class='card'><h3>✅ 已新增導師</h3><p>{html.escape(name.strip())}</p><br><a href='/salary/teachers' class='btn btn-primary'>返回導師列表</a></div></div>{SALARY_FOOTER}"
     )
