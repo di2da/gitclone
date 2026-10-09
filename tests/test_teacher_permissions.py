@@ -53,6 +53,15 @@ class TeacherPermissionTests(unittest.TestCase):
         self.assertNotIn('href="/salary/teachers"', finance_page.body.decode())
         self.assertIn('href="/salary/teachers"', admin_page.body.decode())
 
+    def test_teacher_form_uses_the_matching_create_and_edit_routes(self):
+        create_form = docmagic_app._teacher_form_html(self.request)
+        edit_teacher = (42, "測試導師")
+        edit_form = docmagic_app._teacher_form_html(self.request, edit_teacher)
+
+        self.assertIn('action="/salary/teachers/new"', create_form)
+        self.assertNotIn('action="/salary/teacher//edit"', create_form)
+        self.assertIn('action="/salary/teacher/42/edit"', edit_form)
+
 
 if __name__ == "__main__":
     unittest.main()

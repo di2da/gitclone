@@ -14859,7 +14859,7 @@ def _teacher_form_html(request: Request, teacher=None):
     return f"""
     <div class="card">
         <h3>{'編輯導師' if tid else '新增導師'}</h3>
-        <form method="post" action="/salary/teacher/{tid}/edit" class="stack">
+        <form method="post" action="{'/salary/teacher/' + str(tid) + '/edit' if tid else '/salary/teachers/new'}" class="stack">
             {csrf_html}
             <div class="teacher-form-grid">
                 <div class="field span-2">
