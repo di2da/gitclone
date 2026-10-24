@@ -29,6 +29,8 @@ class AttendanceUxTests(unittest.TestCase):
         self.assertIn("flow-zone", source)
         self.assertIn("lesson-zone", source)
         self.assertIn("student-zone", source)
+        self.assertNotIn("示範案例 1", source)
+        self.assertNotIn("lesson-card-note", inspect.getsource(docmagic_app._attendance_lesson_group_cards_html))
         self.assertIn("請選擇這個課堂的指定上課日期", inspect.getsource(docmagic_app.attendance_submit))
 
 

@@ -6980,7 +6980,6 @@ def _attendance_lesson_group_cards_html(groups, selected_id: int = 0):
                     </div>
                     {demo_badge}
                 </div>
-                {f"<div class='lesson-card-note'>{html.escape(notes)}</div>" if notes else ""}
             </a>
         """)
     return "".join(cards)
