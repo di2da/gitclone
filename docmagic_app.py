@@ -6928,6 +6928,35 @@ def _attendance_batch_row_html():
     """
 
 
+def _attendance_lesson_dates(notes: str) -> list[str]:
+    dates: list[str] = []
+    for value in re.findall(r"\b\d{4}-\d{2}-\d{2}\b", notes or ""):
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except ValueError:
+            continue
+        if value not in dates:
+            dates.append(value)
+    return dates
+
+
+def _attendance_class_date_control(notes: str, today_date: str) -> str:
+    lesson_dates = _attendance_lesson_dates(notes)
+    if not lesson_dates:
+        return f'<input type="date" name="class_date" value="{html.escape(today_date, quote=True)}" required>'
+    selected_date = today_date if today_date in lesson_dates else next(
+        (value for value in lesson_dates if value >= today_date),
+        lesson_dates[-1],
+    )
+    options = []
+    for value in lesson_dates:
+        parsed = datetime.strptime(value, "%Y-%m-%d")
+        label = f"{parsed.day}/{parsed.month}/{parsed.year}"
+        selected = " selected" if value == selected_date else ""
+        options.append(f'<option value="{value}"{selected}>{label}</option>')
+    return f'<select name="class_date" required>{"".join(options)}</select><div class="field-help">只可選擇指定課堂日期</div>'
+
+
 def _attendance_lesson_title(row):
     lesson_id, area, class_title, weekday, lesson_time, class_category, teacher_name, school_name, notes, sort_order, is_demo, is_active = row
     subtitle_bits = [weekday, lesson_time, teacher_name, class_category]
@@ -7282,6 +7311,7 @@ def _render_attendance_page(
     add_student_form_html = ""
     if selected_lesson:
         lesson_rows_html = "".join(_attendance_roster_row_html(row, "present") for row in lesson_students) or '<tr><td colspan="3" class="empty-state">這堂課暫時未有學生名單。</td></tr>'
+        class_date_control = _attendance_class_date_control(selected_lesson[8] or "", today_date)
         lesson_summary_html = f"""
             <div class="lesson-summary">
                 <div class="row"><span>地區</span><strong>{html.escape(selected_lesson[1] or selected_area_label)}</strong></div>
@@ -7307,7 +7337,8 @@ def _render_attendance_page(
             </div>
         """
         roster_form_html = f"""
-            <form method="post" action="/attendance/submit" class="stack" style="margin-top:18px;">
+            <div class="zone student-zone">
+            <form method="post" action="/attendance/submit" class="stack">
                 {_csrf_input_html(request)}
                 <input type="hidden" name="lesson_group_id" value="{lesson_group_id}">
                 <div class="lesson-form-head">
@@ -7317,7 +7348,7 @@ def _render_attendance_page(
                     </div>
                     <div class="field" style="min-width:220px;">
                         <label>課堂日期</label>
-                        <input type="date" name="class_date" value="{today_date}" required>
+                        {class_date_control}
                     </div>
                 </div>
                 {lesson_summary_html}
@@ -7342,10 +7373,11 @@ def _render_attendance_page(
                 </div>
             </form>
             {add_student_form_html}
+            </div>
         """
     else:
         roster_form_html = """
-            <div class="lesson-empty" style="margin-top:18px;">
+            <div class="lesson-empty zone student-zone">
                 未揀課堂。請先從上面課堂名單揀一堂，之後先會顯示學生表格。
             </div>
         """
@@ -7437,6 +7469,16 @@ def _render_attendance_page(
                 padding: 20px;
                 box-shadow: 0 14px 36px rgba(17,17,17,.06);
             }}
+            .zone {{
+                border: 1px solid var(--line);
+                border-radius: 20px;
+                padding: 16px;
+            }}
+            .flow-zone {{ background: #edf6ff; border-color: #c9def5; }}
+            .lesson-zone {{ background: #fff6dc; border-color: #ead59a; }}
+            .student-zone {{ background: #edf9f0; border-color: #bfe0c8; margin-top: 16px; }}
+            .student-zone .table-wrap {{ background: #fff; border: 1px solid rgba(19,122,99,.12); border-radius: 14px; }}
+            .field-help {{ color: var(--muted); font-size: 11px; margin-top: 4px; }}
             .panel h2 {{ margin: 0 0 12px; font-size: 20px; }}
             .panel h3 {{ margin: 0 0 10px; font-size: 16px; }}
             .muted {{ color: var(--muted); font-size: 13px; line-height: 1.6; }}
@@ -7681,7 +7723,7 @@ def _render_attendance_page(
                 <div>
                     <div class="eyebrow">Di2da Admin · Student Attendance</div>
                     <h1>學生點名系統</h1>
-                    <p class="lead">導師登入後可以即時記錄學生出席、缺席同原因。系統已預設九個地區，方便你按校區 / 堂別快速管理課堂出席。</p>
+                    <p class="lead">揀地區、揀課堂、完成點名，再提交。</p>
                     <div class="chips">
                         {all_chip}
                         {area_chips}
@@ -7701,10 +7743,11 @@ def _render_attendance_page(
 
             <section class="grid">
                 <div class="panel">
+                    <div class="zone flow-zone">
                     <div class="lesson-form-head">
                     <div>
-                        <h2>點名流程示範</h2>
-                        <p class="muted">先揀地區，再揀課堂，最後只需要揀日期同剔選出席位置，完成後提交。</p>
+                        <h2>點名流程</h2>
+                        <p class="muted">三步完成。</p>
                     </div>
                         <div class="btn-row">
                             <a class="btn secondary" href="/attendance">重設</a>
@@ -7716,23 +7759,24 @@ def _render_attendance_page(
                     <div class="summary-list" style="margin-top:14px;">
                         <div class="summary-item">
                             <div class="top"><div class="name">Step 1 · 地區</div><span class="badge att-badge att-present">先揀</span></div>
-                            <div class="meta">用上面啲地區 chip 或者呢度嘅課堂清單過濾。例子：藍田、旺角、沙田。</div>
+                            <div class="meta">揀課堂所屬地區。</div>
                         </div>
                         <div class="summary-item">
                             <div class="top"><div class="name">Step 2 · 課堂</div><span class="badge att-badge att-present">再揀</span></div>
-                            <div class="meta">課堂名會似「星期六 1200-1300 coyi KPOP」咁顯示，方便導師即眼認到。</div>
+                            <div class="meta">揀當日上課節數。</div>
                         </div>
                         <div class="summary-item">
                             <div class="top"><div class="name">Step 3 · 學生表格</div><span class="badge att-badge att-present">最終</span></div>
-                            <div class="meta">管理員預先輸入名單，導師只需揀日期、剔選出席，必要時填缺席原因。</div>
+                            <div class="meta">揀指定日期，完成點名並提交。</div>
                         </div>
                     </div>
+                    </div>
 
-                    <div class="lesson-board" style="margin-top:18px;">
+                    <div class="lesson-board zone lesson-zone" style="margin-top:16px;">
                         <div class="lesson-board-head">
                             <div>
                                 <h3 style="margin:0;">課堂名單</h3>
-                                <div class="mini-meta">先揀地區，再揀一堂。下面係示範資料，之後可以換成真實班別。</div>
+                                <div class="mini-meta">揀一堂開始點名。</div>
                             </div>
                             <div class="badge att-badge att-absent">{len(lesson_groups)} 個課堂</div>
                         </div>
@@ -7750,20 +7794,6 @@ def _render_attendance_page(
                         <div class="stat"><div class="num">{today_records}</div><div class="label">今日記錄</div></div>
                         <div class="stat"><div class="num">{absent_records}</div><div class="label">缺席數</div></div>
                         <div class="stat"><div class="num">{unique_students}</div><div class="label">學生數</div></div>
-                    </div>
-                    <div style="margin-top:14px;" class="summary-list">
-                        <div class="summary-item">
-                            <div class="top"><div class="name">示範案例 1</div><span class="badge att-badge att-present">藍田</span></div>
-                            <div class="meta">星期六 1200-1300 coyi KPOP · 6 位學生。適合展示「先揀地區，再揀課堂」。</div>
-                        </div>
-                        <div class="summary-item">
-                            <div class="top"><div class="name">示範案例 2</div><span class="badge att-badge att-present">旺角</span></div>
-                            <div class="meta">星期三 1530-1630 ring Street Dance · 5 位學生。導師只需剔選出席同填缺席原因。</div>
-                        </div>
-                        <div class="summary-item">
-                            <div class="top"><div class="name">示範案例 3</div><span class="badge att-badge att-present">沙田</span></div>
-                            <div class="meta">星期日 1000-1100 szelo Cheerleading · 4 位學生。管理員預先輸入名單後就可以直接使用。</div>
-                        </div>
                     </div>
                 </aside>
             </section>
@@ -8027,6 +8057,9 @@ async def attendance_submit(
         return RedirectResponse("/attendance?notice=empty", status_code=303)
 
     lesson_id, area, class_title, weekday, class_time, class_category, teacher_name, school_name, notes, sort_order, is_demo, is_active = lesson_group
+    allowed_dates = _attendance_lesson_dates(notes or "")
+    if allowed_dates and class_date.strip() not in allowed_dates:
+        raise HTTPException(status_code=400, detail="請選擇這個課堂的指定上課日期")
 
     prepared_rows = []
     for student_id, student_name, display_order, note in lesson_students:
