@@ -5807,6 +5807,19 @@ def _get_session_conflicts(start_date: date, end_date: date):
     return conflicts
 
 
+def _school_session_is_effectively_completed(status: str, session_date: str, today: date = None) -> bool:
+    status_value = str(status or "").strip()
+    if status_value == "已完成":
+        return True
+    if status_value != "已排":
+        return False
+    try:
+        lesson_date = datetime.strptime(str(session_date or "").strip(), "%Y-%m-%d").date()
+    except ValueError:
+        return False
+    return lesson_date < (today or _hk_today())
+
+
 def _render_school_monitor_page(request: Request, year: int = None, month: int = None):
     now = _hk_now()
     year = year or now.year
@@ -5820,6 +5833,7 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
     prev_year = year if month > 1 else year - 1
     next_month = month + 1 if month < 12 else 1
     next_year = year if month < 12 else year + 1
+    today_iso = _hk_today().isoformat()
     
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -5829,9 +5843,10 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
     cursor.execute(
         """
         SELECT
+            sc.id AS school_id,
             sc.name AS school_name,
             COUNT(DISTINCT ss.id) AS total_sessions,
-            SUM(CASE WHEN ss.status = '已完成' THEN 1 ELSE 0 END) AS completed_sessions,
+            SUM(CASE WHEN ss.status = '已完成' OR (ss.status = '已排' AND ss.session_date < ?) THEN 1 ELSE 0 END) AS completed_sessions,
             SUM(CASE WHEN ss.status IN ('取消', '取消待補') THEN 1 ELSE 0 END) AS cancelled_sessions,
             SUM(CASE WHEN ss.status = '改期' THEN 1 ELSE 0 END) AS rescheduled_sessions,
             COUNT(DISTINCT sp.teacher_id) AS teacher_count,
@@ -5844,9 +5859,31 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
         GROUP BY sc.id, sc.name
         ORDER BY total_sessions DESC, sc.name
         """,
-        (month_start.isoformat(), month_end.isoformat()),
+        (today_iso, month_start.isoformat(), month_end.isoformat()),
     )
     school_rows = cursor.fetchall()
+
+    # Overall school progress across all active programmes. Past sessions which
+    # remain in the normal default state (已排) count as completed for reporting;
+    # explicit exceptions such as 取消、改期 and 待確認 remain unchanged.
+    cursor.execute(
+        """
+        SELECT
+            sc.id AS school_id,
+            COUNT(DISTINCT ss.id) AS total_sessions,
+            SUM(CASE WHEN ss.status = '已完成' OR (ss.status = '已排' AND ss.session_date < ?) THEN 1 ELSE 0 END) AS completed_sessions
+        FROM schools sc
+        LEFT JOIN school_programs sp ON sp.school_id = sc.id AND sp.is_active = 1
+        LEFT JOIN school_sessions ss ON ss.program_id = sp.id
+        WHERE sc.is_active = 1
+        GROUP BY sc.id
+        """,
+        (today_iso,),
+    )
+    overall_school_progress = {
+        int(row["school_id"]): (int(row["completed_sessions"] or 0), int(row["total_sessions"] or 0))
+        for row in cursor.fetchall()
+    }
     
     # Teacher summary
     cursor.execute(
@@ -5854,7 +5891,7 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
         SELECT
             t.name AS teacher_name,
             COUNT(DISTINCT ss.id) AS total_sessions,
-            SUM(CASE WHEN ss.status = '已完成' THEN 1 ELSE 0 END) AS completed_sessions,
+            SUM(CASE WHEN ss.status = '已完成' OR (ss.status = '已排' AND ss.session_date < ?) THEN 1 ELSE 0 END) AS completed_sessions,
             COUNT(DISTINCT sp.school_id) AS school_count,
             COUNT(DISTINCT sp.id) AS program_count
         FROM teachers t
@@ -5865,7 +5902,7 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
         GROUP BY t.id, t.name
         ORDER BY total_sessions DESC, t.name
         """,
-        (month_start.isoformat(), month_end.isoformat()),
+        (today_iso, month_start.isoformat(), month_end.isoformat()),
     )
     teacher_rows = cursor.fetchall()
     
@@ -5875,7 +5912,7 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
         SELECT
             strftime('%W', ss.session_date) AS week_num,
             COUNT(*) AS total_sessions,
-            SUM(CASE WHEN ss.status = '已完成' THEN 1 ELSE 0 END) AS completed
+            SUM(CASE WHEN ss.status = '已完成' OR (ss.status = '已排' AND ss.session_date < ?) THEN 1 ELSE 0 END) AS completed
         FROM school_sessions ss
         JOIN school_programs sp ON sp.id = ss.program_id
         WHERE ss.session_date BETWEEN ? AND ?
@@ -5883,9 +5920,34 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
         GROUP BY week_num
         ORDER BY week_num
         """,
-        (month_start.isoformat(), month_end.isoformat()),
+        (today_iso, month_start.isoformat(), month_end.isoformat()),
     )
     weekly_rows = cursor.fetchall()
+
+    # Programme-level progress lets staff see the current lesson number, e.g. 3/20.
+    cursor.execute(
+        """
+        SELECT
+            sp.id AS program_id,
+            sc.name AS school_name,
+            sp.program_name,
+            sp.weekday,
+            sp.default_start_time,
+            COALESCE(t.name, sp.teacher_name_snapshot, '') AS teacher_name,
+            COUNT(DISTINCT ss.id) AS total_sessions,
+            SUM(CASE WHEN ss.status = '已完成' OR (ss.status = '已排' AND ss.session_date < ?) THEN 1 ELSE 0 END) AS completed_sessions
+        FROM school_programs sp
+        JOIN schools sc ON sc.id = sp.school_id
+        LEFT JOIN teachers t ON t.id = sp.teacher_id
+        LEFT JOIN school_sessions ss ON ss.program_id = sp.id
+        WHERE sp.is_active = 1 AND sc.is_active = 1
+        GROUP BY sp.id, sc.name, sp.program_name, sp.weekday, sp.default_start_time, t.name, sp.teacher_name_snapshot
+        HAVING COUNT(DISTINCT ss.id) > 0
+        ORDER BY sc.name COLLATE NOCASE, sp.program_name COLLATE NOCASE, sp.default_start_time
+        """,
+        (today_iso,),
+    )
+    program_rows = cursor.fetchall()
     
     conn.close()
     
@@ -5899,14 +5961,30 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
         total = s["total_sessions"] or 0
         completed = s["completed_sessions"] or 0
         rate = round((completed / total * 100), 1) if total > 0 else 0
+        overall_completed, overall_total = overall_school_progress.get(int(s["school_id"]), (0, 0))
+        overall_rate = round((overall_completed / overall_total * 100), 1) if overall_total > 0 else 0
         school_cards.append(f"""
             <tr>
                 <td style="padding:10px 8px;font-size:13px;">{html.escape(s['school_name'] or '')}</td>
-                <td style="padding:10px 8px;font-size:13px;text-align:center;">{total}</td>
-                <td style="padding:10px 8px;font-size:13px;text-align:center;">{completed}</td>
-                <td style="padding:10px 8px;font-size:13px;text-align:center;">{rate}%</td>
+                <td style="padding:10px 8px;font-size:13px;text-align:center;"><strong>{overall_completed}/{overall_total} 堂</strong><div style="color:#6b7280;font-size:11px;">{overall_rate}%</div></td>
+                <td style="padding:10px 8px;font-size:13px;text-align:center;">{completed}/{total}</td>
                 <td style="padding:10px 8px;font-size:13px;text-align:center;">{s['teacher_count'] or 0}</td>
                 <td style="padding:10px 8px;font-size:13px;text-align:center;">{s['program_count'] or 0}</td>
+            </tr>
+        """)
+
+    program_cards = []
+    for program in program_rows:
+        total = int(program["total_sessions"] or 0)
+        completed = int(program["completed_sessions"] or 0)
+        rate = round((completed / total * 100), 1) if total else 0
+        schedule = " ".join(bit for bit in [program["weekday"] or "", (program["default_start_time"] or "")[:5]] if bit)
+        program_cards.append(f"""
+            <tr>
+                <td style="padding:10px 8px;font-size:13px;">{html.escape(program['school_name'] or '')}</td>
+                <td style="padding:10px 8px;font-size:13px;"><strong>{html.escape(program['program_name'] or '未命名班別')}</strong><div style="color:#6b7280;font-size:11px;">{html.escape(schedule or '未有時間')}</div></td>
+                <td style="padding:10px 8px;font-size:13px;">{html.escape(program['teacher_name'] or '未配對')}</td>
+                <td style="padding:10px 8px;font-size:13px;text-align:center;"><strong>{completed}/{total} 堂</strong><div style="color:#6b7280;font-size:11px;">{rate}%</div></td>
             </tr>
         """)
     
@@ -5949,7 +6027,7 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
             .container {{ max-width:1200px; margin:0 auto; padding:20px; }}
             .toolbar {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }}
             .toolbar a {{ text-decoration:none; color:#111; background:#fff; border:1px solid var(--line); padding:8px 12px; border-radius:10px; font-size:13px; }}
-            .card {{ background:#fff; border:1px solid var(--line); border-radius:16px; padding:20px; margin-bottom:16px; }}
+            .card {{ background:#fff; border:1px solid var(--line); border-radius:16px; padding:20px; margin-bottom:16px; overflow-x:auto; -webkit-overflow-scrolling:touch; }}
             .card h3 {{ margin:0 0 14px; font-size:16px; }}
             table {{ width:100%; border-collapse:collapse; font-size:13px; }}
             th {{ text-align:left; padding:10px 8px; background:#f9fafb; border-bottom:1px solid #e5e7eb; font-weight:600; }}
@@ -5968,19 +6046,36 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
             
             <div class="card">
                 <h3>📊 學校課堂統計</h3>
+                <p style="margin:-6px 0 14px;color:#6b7280;font-size:12px;">過去日期而狀態仍為「已排」的正常課堂會自動計作已完成；取消、取消待補、改期及待確認不會自動完成。</p>
                 <table>
                     <thead>
                         <tr>
                             <th>學校</th>
-                            <th style="text-align:center">總堂數</th>
-                            <th style="text-align:center">已完成</th>
-                            <th style="text-align:center">完成率</th>
+                            <th style="text-align:center">整體進度</th>
+                            <th style="text-align:center">本月完成</th>
                             <th style="text-align:center">導師數</th>
                             <th style="text-align:center">班別數</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {''.join(school_cards) or '<tr><td colspan="6" style="padding:14px;color:#9ca3af;">沒有資料</td></tr>'}
+                        {''.join(school_cards) or '<tr><td colspan="5" style="padding:14px;color:#9ca3af;">沒有資料</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>📚 班別課堂進度</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>學校</th>
+                            <th>班別／時間</th>
+                            <th>導師</th>
+                            <th style="text-align:center">已完成／總堂數</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {''.join(program_cards) or '<tr><td colspan="4" style="padding:14px;color:#9ca3af;">沒有資料</td></tr>'}
                     </tbody>
                 </table>
             </div>
