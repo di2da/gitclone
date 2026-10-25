@@ -5957,6 +5957,13 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
     conflicts = _get_session_conflicts(month_start, month_end)
     
     month_label = f"{year}年{month}月"
+
+    month_total = sum(int(row["total_sessions"] or 0) for row in school_rows)
+    month_completed = sum(int(row["completed_sessions"] or 0) for row in school_rows)
+    month_cancelled = sum(int(row["cancelled_sessions"] or 0) for row in school_rows)
+    month_rescheduled = sum(int(row["rescheduled_sessions"] or 0) for row in school_rows)
+    month_rate = round((month_completed / month_total * 100), 1) if month_total else 0
+    unassigned_programs = [row for row in program_rows if not (row["teacher_name"] or "").strip()]
     
     school_cards = []
     for s in school_rows:
@@ -5965,13 +5972,19 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
         rate = round((completed / total * 100), 1) if total > 0 else 0
         overall_completed, overall_total = overall_school_progress.get(int(s["school_id"]), (0, 0))
         overall_rate = round((overall_completed / overall_total * 100), 1) if overall_total > 0 else 0
+        attention_badges = []
+        if int(s["cancelled_sessions"] or 0):
+            attention_badges.append(f'<span class="status-pill danger">取消 {int(s["cancelled_sessions"] or 0)}</span>')
+        if int(s["rescheduled_sessions"] or 0):
+            attention_badges.append(f'<span class="status-pill warning">改期 {int(s["rescheduled_sessions"] or 0)}</span>')
+        search_value = html.escape((s["school_name"] or "").lower(), quote=True)
         school_cards.append(f"""
-            <tr>
-                <td style="padding:10px 8px;font-size:13px;">{html.escape(s['school_name'] or '')}</td>
-                <td style="padding:10px 8px;font-size:13px;text-align:center;"><strong>{overall_completed}/{overall_total} 堂</strong><div style="color:#6b7280;font-size:11px;">{overall_rate}%</div></td>
-                <td style="padding:10px 8px;font-size:13px;text-align:center;">{completed}/{total}</td>
-                <td style="padding:10px 8px;font-size:13px;text-align:center;">{s['teacher_count'] or 0}</td>
-                <td style="padding:10px 8px;font-size:13px;text-align:center;">{s['program_count'] or 0}</td>
+            <tr data-search-row data-search="{search_value}">
+                <td><strong>{html.escape(s['school_name'] or '')}</strong><div class="row-badges">{''.join(attention_badges) or '<span class="status-pill healthy">正常</span>'}</div></td>
+                <td class="progress-cell"><strong>{overall_completed}/{overall_total} 堂</strong><div class="progress-track"><span style="width:{min(100, overall_rate)}%"></span></div><small>{overall_rate}%</small></td>
+                <td class="number-cell"><strong>{completed}/{total}</strong><small>{rate}%</small></td>
+                <td class="number-cell">{s['teacher_count'] or 0}</td>
+                <td class="number-cell">{s['program_count'] or 0}</td>
             </tr>
         """)
 
@@ -5981,12 +5994,18 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
         completed = int(program["completed_sessions"] or 0)
         rate = round((completed / total * 100), 1) if total else 0
         schedule = " ".join(bit for bit in [program["weekday"] or "", (program["default_start_time"] or "")[:5]] if bit)
+        search_value = html.escape(" ".join([
+            program["school_name"] or "",
+            program["program_name"] or "",
+            program["teacher_name"] or "",
+            schedule,
+        ]).lower(), quote=True)
         program_cards.append(f"""
-            <tr>
-                <td style="padding:10px 8px;font-size:13px;">{html.escape(program['school_name'] or '')}</td>
-                <td style="padding:10px 8px;font-size:13px;"><strong>{html.escape(program['program_name'] or '未命名班別')}</strong><div style="color:#6b7280;font-size:11px;">{html.escape(schedule or '未有時間')}</div></td>
-                <td style="padding:10px 8px;font-size:13px;">{html.escape(program['teacher_name'] or '未配對')}</td>
-                <td style="padding:10px 8px;font-size:13px;text-align:center;"><strong>{completed}/{total} 堂</strong><div style="color:#6b7280;font-size:11px;">{rate}%</div></td>
+            <tr data-search-row data-search="{search_value}">
+                <td>{html.escape(program['school_name'] or '')}</td>
+                <td><strong>{html.escape(program['program_name'] or '未命名班別')}</strong><small>{html.escape(schedule or '未有時間')}</small></td>
+                <td>{html.escape(program['teacher_name'] or '未配對')}{'<span class="status-pill danger inline-pill">需配對</span>' if not (program['teacher_name'] or '').strip() else ''}</td>
+                <td class="progress-cell"><strong>{completed}/{total} 堂</strong><div class="progress-track"><span style="width:{min(100, rate)}%"></span></div><small>{rate}%</small></td>
             </tr>
         """)
     
@@ -5995,26 +6014,69 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
         total = t["total_sessions"] or 0
         completed = t["completed_sessions"] or 0
         rate = round((completed / total * 100), 1) if total > 0 else 0
+        search_value = html.escape((t["teacher_name"] or "").lower(), quote=True)
         teacher_cards.append(f"""
-            <tr>
-                <td style="padding:10px 8px;font-size:13px;">{html.escape(t['teacher_name'] or '')}</td>
-                <td style="padding:10px 8px;font-size:13px;text-align:center;">{total}</td>
-                <td style="padding:10px 8px;font-size:13px;text-align:center;">{completed}</td>
-                <td style="padding:10px 8px;font-size:13px;text-align:center;">{rate}%</td>
-                <td style="padding:10px 8px;font-size:13px;text-align:center;">{t['school_count'] or 0}</td>
-                <td style="padding:10px 8px;font-size:13px;text-align:center;">{t['program_count'] or 0}</td>
+            <tr data-search-row data-search="{search_value}">
+                <td><strong>{html.escape(t['teacher_name'] or '')}</strong></td>
+                <td class="number-cell">{total}</td>
+                <td class="number-cell">{completed}</td>
+                <td class="progress-cell"><strong>{rate}%</strong><div class="progress-track"><span style="width:{min(100, rate)}%"></span></div></td>
+                <td class="number-cell">{t['school_count'] or 0}</td>
+                <td class="number-cell">{t['program_count'] or 0}</td>
             </tr>
         """)
     
     conflict_cards = []
     for c1, c2 in conflicts[:10]:
+        search_value = html.escape(" ".join([
+            c1["teacher_name"] or "", c1["school_name"] or "", c1["program_name"] or "",
+            c2["school_name"] or "", c2["program_name"] or "",
+        ]).lower(), quote=True)
         conflict_cards.append(f"""
-            <div style="padding:10px;background:#fee2e2;border:1px solid #fecaca;border-radius:8px;margin-bottom:6px;font-size:12px;">
-                <strong>⚠️ 時間衝突</strong> · {html.escape(c1['teacher_name'] or '')}<br>
-                {c1['session_date']} {html.escape(c1['start_time'] or '')} {html.escape(c1['school_name'] or '')} {html.escape(c1['program_name'] or '')}<br>
-                vs {html.escape(c2['start_time'] or '')} {html.escape(c2['school_name'] or '')} {html.escape(c2['program_name'] or '')}
+            <div class="alert-item" data-search-row data-search="{search_value}">
+                <div class="alert-icon">!</div>
+                <div><strong>時間衝突 · {html.escape(c1['teacher_name'] or '未配對導師')}</strong>
+                <p>{c1['session_date']} · {html.escape(c1['start_time'] or '')} {html.escape(c1['school_name'] or '')} {html.escape(c1['program_name'] or '')}</p>
+                <p>同時段：{html.escape(c2['start_time'] or '')} {html.escape(c2['school_name'] or '')} {html.escape(c2['program_name'] or '')}</p></div>
             </div>
         """)
+
+    overview_school_cards = []
+    for s in school_rows[:8]:
+        overall_completed, overall_total = overall_school_progress.get(int(s["school_id"]), (0, 0))
+        overall_rate = round((overall_completed / overall_total * 100), 1) if overall_total else 0
+        overview_school_cards.append(f"""
+            <div class="school-progress-card">
+                <div class="school-progress-head"><strong>{html.escape(s['school_name'] or '')}</strong><span>{overall_completed}/{overall_total} 堂</span></div>
+                <div class="progress-track large"><span style="width:{min(100, overall_rate)}%"></span></div>
+                <div class="school-progress-meta"><span>整體 {overall_rate}%</span><span>本月 {int(s['completed_sessions'] or 0)}/{int(s['total_sessions'] or 0)}</span></div>
+            </div>
+        """)
+
+    weekly_max = max([int(row["total_sessions"] or 0) for row in weekly_rows] or [1])
+    weekly_chart = []
+    for index, row in enumerate(weekly_rows, start=1):
+        total = int(row["total_sessions"] or 0)
+        completed = int(row["completed"] or 0)
+        weekly_chart.append(f"""
+            <div class="week-row">
+                <span>第 {index} 週</span>
+                <div class="week-track"><i style="width:{round(total / weekly_max * 100, 1)}%"><b style="width:{round(completed / max(1, total) * 100, 1)}%"></b></i></div>
+                <strong>{completed}/{total}</strong>
+            </div>
+        """)
+
+    attention_items = []
+    if conflicts:
+        attention_items.append(f'<button type="button" class="focus-card danger" data-open-tab="alerts"><span>時間衝突</span><strong>{len(conflicts)} 宗</strong><small>需要即時核對導師安排</small></button>')
+    if month_cancelled:
+        attention_items.append(f'<button type="button" class="focus-card warning" data-open-tab="schools"><span>取消／待補</span><strong>{month_cancelled} 堂</strong><small>檢查是否需要安排補堂</small></button>')
+    if month_rescheduled:
+        attention_items.append(f'<button type="button" class="focus-card info" data-open-tab="schools"><span>改期</span><strong>{month_rescheduled} 堂</strong><small>確認新日期及導師</small></button>')
+    if unassigned_programs:
+        attention_items.append(f'<button type="button" class="focus-card purple" data-open-tab="programs"><span>未配對導師</span><strong>{len(unassigned_programs)} 班</strong><small>完成導師配對後才算可執行</small></button>')
+    if not attention_items:
+        attention_items.append('<div class="focus-card healthy"><span>本月狀態</span><strong>運作正常</strong><small>暫時未有需要即時處理的例外</small></div>')
     
     return f"""
     <html lang="zh-HK">
@@ -6023,90 +6085,133 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>{APP_NAME} - 學校課堂月報</title>
         <style>
-            :root {{ --bg:#f5f1e8; --paper:#ffffff; --ink:#101114; --muted:#5f646d; --line:rgba(16,17,20,.10); --accent:#b89d5d; --accent-soft:#f4ead2; }}
+            :root {{ --bg:#f3f6fb; --paper:#fff; --ink:#172033; --muted:#657087; --line:#e4e9f2; --blue:#3367d6; --blue-soft:#eaf1ff; --green:#1f8f5f; --red:#c63f3f; --amber:#b66b08; --purple:#7453b8; }}
             * {{ box-sizing:border-box; }}
-            body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif; background:var(--bg); color:var(--ink); }}
-            .container {{ max-width:1200px; margin:0 auto; padding:20px; }}
-            .toolbar {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }}
-            .toolbar a {{ text-decoration:none; color:#111; background:#fff; border:1px solid var(--line); padding:8px 12px; border-radius:10px; font-size:13px; }}
-            .card {{ background:#fff; border:1px solid var(--line); border-radius:16px; padding:20px; margin-bottom:16px; overflow-x:auto; -webkit-overflow-scrolling:touch; }}
-            .card h3 {{ margin:0 0 14px; font-size:16px; }}
-            table {{ width:100%; border-collapse:collapse; font-size:13px; }}
-            th {{ text-align:left; padding:10px 8px; background:#f9fafb; border-bottom:1px solid #e5e7eb; font-weight:600; }}
-            td {{ border-bottom:1px solid #f3f4f6; }}
+            body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC",sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; }}
+            button,input {{ font:inherit; }}
+            .container {{ max-width:1240px; margin:0 auto; padding:24px 22px 64px; }}
+            .hero {{ position:relative; overflow:hidden; color:#fff; background:linear-gradient(135deg,#18345f 0%,#2f63bd 70%,#5988de 100%); border-radius:26px; padding:24px; box-shadow:0 18px 50px rgba(37,77,145,.18); }}
+            .hero:after {{ content:""; position:absolute; width:260px; height:260px; border-radius:50%; right:-70px; top:-130px; background:rgba(255,255,255,.09); }}
+            .hero-top {{ position:relative; z-index:1; display:flex; justify-content:space-between; align-items:flex-start; gap:20px; flex-wrap:wrap; }}
+            .eyebrow {{ font-size:12px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; opacity:.75; }}
+            h1 {{ font-size:32px; line-height:1.1; margin:7px 0 7px; letter-spacing:-.6px; }}
+            .hero p {{ margin:0; max-width:700px; color:rgba(255,255,255,.78); font-size:13px; line-height:1.6; }}
+            .month-nav {{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }}
+            .month-nav a,.month-chip {{ min-height:40px; display:inline-flex; align-items:center; justify-content:center; text-decoration:none; padding:8px 13px; border-radius:999px; background:rgba(255,255,255,.13); border:1px solid rgba(255,255,255,.18); color:#fff; font-size:13px; font-weight:700; }}
+            .month-chip {{ background:#fff; color:#244d8f; }}
+            .kpis {{ display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin:18px 0; }}
+            .kpi {{ background:var(--paper); border:1px solid var(--line); border-radius:18px; padding:17px; box-shadow:0 6px 22px rgba(31,52,88,.06); }}
+            .kpi span {{ color:var(--muted); font-size:12px; }}
+            .kpi strong {{ display:block; margin:7px 0 3px; font-size:25px; letter-spacing:-.5px; font-variant-numeric:tabular-nums; }}
+            .kpi small {{ color:var(--muted); font-size:11px; }}
+            .tab-shell {{ position:sticky; top:0; z-index:10; padding:10px 0; background:linear-gradient(var(--bg) 70%,rgba(243,246,251,0)); }}
+            .tabs {{ display:flex; gap:6px; padding:6px; border:1px solid var(--line); border-radius:16px; background:rgba(255,255,255,.94); box-shadow:0 6px 22px rgba(31,52,88,.06); overflow-x:auto; }}
+            .tab {{ border:0; white-space:nowrap; background:transparent; color:var(--muted); padding:10px 15px; border-radius:11px; cursor:pointer; font-size:13px; font-weight:750; }}
+            .tab.active {{ color:#fff; background:var(--ink); }}
+            .search {{ margin-left:auto; min-width:230px; border:1px solid var(--line); border-radius:11px; padding:9px 12px; color:var(--ink); background:#f8fafc; }}
+            .panel {{ display:none; }}
+            .panel.active {{ display:block; }}
+            .card {{ background:var(--paper); border:1px solid var(--line); border-radius:20px; padding:20px; margin-bottom:16px; box-shadow:0 6px 22px rgba(31,52,88,.05); }}
+            .section-head {{ display:flex; justify-content:space-between; gap:14px; align-items:flex-end; margin-bottom:15px; }}
+            .section-head h2 {{ margin:0 0 4px; font-size:19px; }}
+            .section-head p {{ margin:0; color:var(--muted); font-size:12px; }}
+            .focus-grid {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }}
+            .focus-card {{ text-align:left; border:1px solid var(--line); border-left:5px solid var(--blue); border-radius:16px; background:#fff; padding:15px; color:var(--ink); cursor:pointer; }}
+            .focus-card span,.focus-card small {{ display:block; color:var(--muted); font-size:11px; }}
+            .focus-card strong {{ display:block; font-size:20px; margin:5px 0; }}
+            .focus-card.danger {{ border-left-color:var(--red); background:#fff8f8; }} .focus-card.warning {{ border-left-color:var(--amber); background:#fffaf1; }} .focus-card.info {{ border-left-color:var(--blue); background:#f7faff; }} .focus-card.purple {{ border-left-color:var(--purple); background:#faf8ff; }} .focus-card.healthy {{ border-left-color:var(--green); background:#f5fcf8; }}
+            .overview-grid {{ display:grid; grid-template-columns:1.3fr .7fr; gap:16px; }}
+            .school-grid {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }}
+            .school-progress-card {{ border:1px solid var(--line); border-radius:14px; padding:13px; }}
+            .school-progress-head,.school-progress-meta {{ display:flex; justify-content:space-between; gap:10px; align-items:center; }}
+            .school-progress-head strong {{ font-size:13px; }} .school-progress-head span,.school-progress-meta {{ color:var(--muted); font-size:11px; }}
+            .progress-track {{ height:7px; margin:7px 0 4px; overflow:hidden; background:#e8edf5; border-radius:999px; }}
+            .progress-track span {{ display:block; height:100%; min-width:2px; border-radius:inherit; background:linear-gradient(90deg,#3971db,#56a0ef); }}
+            .progress-track.large {{ height:8px; margin:10px 0 7px; }}
+            .week-row {{ display:grid; grid-template-columns:48px 1fr 42px; gap:10px; align-items:center; padding:9px 0; font-size:12px; }}
+            .week-row>span {{ color:var(--muted); }} .week-row>strong {{ text-align:right; font-variant-numeric:tabular-nums; }}
+            .week-track {{ height:10px; overflow:hidden; border-radius:999px; background:#edf1f7; }} .week-track i,.week-track b {{ display:block; height:100%; border-radius:inherit; }} .week-track i {{ background:#cdd8ea; }} .week-track b {{ background:var(--green); }}
+            .table-wrap {{ overflow:auto; border:1px solid var(--line); border-radius:14px; }}
+            table {{ width:100%; min-width:720px; border-collapse:collapse; font-size:13px; }}
+            th {{ text-align:left; padding:12px; background:#f7f9fc; border-bottom:1px solid var(--line); color:#586277; font-size:11px; letter-spacing:.03em; }}
+            td {{ padding:12px; border-bottom:1px solid #eef1f6; vertical-align:middle; }}
+            tr:last-child td {{ border-bottom:0; }} tbody tr:hover {{ background:#f9fbff; }}
+            td small {{ display:block; color:var(--muted); margin-top:4px; }}
+            .number-cell {{ text-align:center; font-variant-numeric:tabular-nums; }}
+            .progress-cell {{ min-width:150px; font-variant-numeric:tabular-nums; }} .progress-cell small {{ display:inline-block; margin:0 0 0 6px; }}
+            .row-badges {{ display:flex; gap:5px; margin-top:5px; flex-wrap:wrap; }}
+            .status-pill {{ display:inline-flex; width:max-content; padding:3px 7px; border-radius:999px; font-size:10px; font-weight:800; background:#eef2f7; color:#5d687a; }}
+            .status-pill.danger {{ color:#a72d2d; background:#fdeaea; }} .status-pill.warning {{ color:#92570a; background:#fff0cf; }} .status-pill.healthy {{ color:#16734b; background:#e4f7ed; }} .inline-pill {{ margin-left:7px; }}
+            .alerts {{ display:grid; gap:10px; }} .alert-item {{ display:flex; gap:12px; border:1px solid #f4caca; background:#fff8f8; border-radius:15px; padding:14px; }}
+            .alert-icon {{ flex:0 0 28px; width:28px; height:28px; display:grid; place-items:center; border-radius:50%; background:var(--red); color:#fff; font-weight:900; }} .alert-item p {{ margin:4px 0 0; color:var(--muted); font-size:12px; }}
+            .empty {{ color:var(--muted); padding:14px; font-size:13px; }}
+            @media (max-width:900px) {{ .kpis {{ grid-template-columns:repeat(2,1fr); }} .focus-grid {{ grid-template-columns:repeat(2,1fr); }} .overview-grid {{ grid-template-columns:1fr; }} }}
+            @media (max-width:620px) {{ .container {{ padding:14px 12px 48px; }} .hero {{ border-radius:20px; padding:19px; }} .hero p {{ overflow-wrap:anywhere; }} h1 {{ font-size:27px; }} .month-nav {{ width:100%; }} .month-nav a,.month-chip {{ flex:1 1 calc(50% - 8px); min-width:0; }} .kpis {{ gap:8px; }} .kpi {{ padding:14px; }} .kpi strong {{ font-size:21px; }} .tabs {{ border-radius:14px; flex-wrap:wrap; }} .tab {{ flex:1 1 auto; }} .search {{ min-width:0; width:100%; flex:1 1 100%; order:9; }} .focus-grid,.school-grid {{ grid-template-columns:1fr; }} .card {{ padding:15px; border-radius:16px; }} }}
         </style>
     </head>
     <body>
-        <div class="container">
-            <div class="toolbar">
-                <a href="/dashboard">← 返回 Dashboard</a>
-                <a href="/school-monitor?year={prev_year}&month={prev_month}">← 上月</a>
-                <strong>{month_label}</strong>
-                <a href="/school-monitor?year={next_year}&month={next_month}">下月 →</a>
-                <a href="/calendar">校曆</a>
-            </div>
-            
-            <div class="card">
-                <h3>📊 學校課堂統計</h3>
-                <p style="margin:-6px 0 14px;color:#6b7280;font-size:12px;">過去日期而狀態仍為「已排」的正常課堂會自動計作已完成；取消、取消待補、改期及待確認不會自動完成。</p>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>學校</th>
-                            <th style="text-align:center">整體進度</th>
-                            <th style="text-align:center">本月完成</th>
-                            <th style="text-align:center">導師數</th>
-                            <th style="text-align:center">班別數</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {''.join(school_cards) or '<tr><td colspan="5" style="padding:14px;color:#9ca3af;">沒有資料</td></tr>'}
-                    </tbody>
-                </table>
-            </div>
+        <main class="container">
+            <section class="hero">
+                <div class="hero-top">
+                    <div><div class="eyebrow">School Operations</div><h1>學校課堂營運總覽</h1><p>先睇需要處理嘅例外，再落到學校、班別同導師資料。過去日期而狀態仍為「已排」會自動計作完成。</p></div>
+                    <nav class="month-nav"><a href="/dashboard">主目錄</a><a href="/school-monitor?year={prev_year}&month={prev_month}">← 上月</a><span class="month-chip">{month_label}</span><a href="/school-monitor?year={next_year}&month={next_month}">下月 →</a><a href="/calendar">校曆</a></nav>
+                </div>
+            </section>
 
-            <div class="card">
-                <h3>📚 班別課堂進度</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>學校</th>
-                            <th>班別／時間</th>
-                            <th>導師</th>
-                            <th style="text-align:center">已完成／總堂數</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {''.join(program_cards) or '<tr><td colspan="4" style="padding:14px;color:#9ca3af;">沒有資料</td></tr>'}
-                    </tbody>
-                </table>
-            </div>
-            
-            <div class="card">
-                <h3>👨‍🏫 導師出勤統計</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>導師</th>
-                            <th style="text-align:center">總堂數</th>
-                            <th style="text-align:center">已完成</th>
-                            <th style="text-align:center">完成率</th>
-                            <th style="text-align:center">學校數</th>
-                            <th style="text-align:center">班別數</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {''.join(teacher_cards) or '<tr><td colspan="6" style="padding:14px;color:#9ca3af;">沒有資料</td></tr>'}
-                    </tbody>
-                </table>
-            </div>
-            
-            <div class="card">
-                <h3>⚠️ 時間衝突警示 ({len(conflicts)} 宗)</h3>
-                {''.join(conflict_cards) or '<p style="color:#9ca3af;font-size:13px;">本月沒有時間衝突。</p>'}
-                {f'<p style="color:#9ca3af;font-size:12px;margin-top:8px;">還有 {len(conflicts) - 10} 宗衝突未顯示</p>' if len(conflicts) > 10 else ''}
-            </div>
-        </div>
+            <section class="kpis" aria-label="本月關鍵數字">
+                <div class="kpi"><span>本月課堂</span><strong>{month_total}</strong><small>{len(school_rows)} 間學校</small></div>
+                <div class="kpi"><span>已完成</span><strong>{month_completed}</strong><small>{month_rate}% 完成率</small></div>
+                <div class="kpi"><span>取消／待補</span><strong>{month_cancelled}</strong><small>需檢查補堂</small></div>
+                <div class="kpi"><span>改期</span><strong>{month_rescheduled}</strong><small>需確認新安排</small></div>
+                <div class="kpi"><span>時間衝突</span><strong>{len(conflicts)}</strong><small>導師時段警示</small></div>
+            </section>
+
+            <div class="tab-shell"><nav class="tabs" aria-label="月報分類">
+                <button type="button" class="tab active" data-tab="overview">總覽</button>
+                <button type="button" class="tab" data-tab="schools">學校</button>
+                <button type="button" class="tab" data-tab="programs">班別</button>
+                <button type="button" class="tab" data-tab="teachers">導師</button>
+                <button type="button" class="tab" data-tab="alerts">警示 {f'({len(conflicts)})' if conflicts else ''}</button>
+                <input id="monitor-search" class="search" type="search" placeholder="搜尋學校、班別或導師">
+            </nav></div>
+
+            <section class="panel active" data-panel="overview">
+                <div class="card"><div class="section-head"><div><h2>管理焦點</h2><p>按項目可直接跳到相關資料。</p></div></div><div class="focus-grid">{''.join(attention_items)}</div></div>
+                <div class="overview-grid">
+                    <div class="card"><div class="section-head"><div><h2>主要學校進度</h2><p>按本月課堂量排序，快速掌握整體進度。</p></div><button type="button" class="tab" data-open-tab="schools">查看全部</button></div><div class="school-grid">{''.join(overview_school_cards) or '<div class="empty">沒有資料</div>'}</div></div>
+                    <div class="card"><div class="section-head"><div><h2>每週課堂量</h2><p>綠色為已完成，灰色為全週課堂。</p></div></div>{''.join(weekly_chart) or '<div class="empty">沒有資料</div>'}</div>
+                </div>
+            </section>
+
+            <section class="panel" data-panel="schools"><div class="card"><div class="section-head"><div><h2>學校課堂統計</h2><p>整體進度、本月完成及需要跟進嘅例外。</p></div></div><div class="table-wrap"><table><thead><tr><th>學校</th><th>整體進度</th><th>本月完成</th><th>導師數</th><th>班別數</th></tr></thead><tbody>{''.join(school_cards) or '<tr><td colspan="5" class="empty">沒有資料</td></tr>'}</tbody></table></div></div></section>
+
+            <section class="panel" data-panel="programs"><div class="card"><div class="section-head"><div><h2>班別課堂進度</h2><p>每班目前第幾堂、總堂數、上課時間及導師。</p></div></div><div class="table-wrap"><table><thead><tr><th>學校</th><th>班別／時間</th><th>導師</th><th>已完成／總堂數</th></tr></thead><tbody>{''.join(program_cards) or '<tr><td colspan="4" class="empty">沒有資料</td></tr>'}</tbody></table></div></div></section>
+
+            <section class="panel" data-panel="teachers"><div class="card"><div class="section-head"><div><h2>導師出勤統計</h2><p>本月工作量、完成率及涉及學校／班別數。</p></div></div><div class="table-wrap"><table><thead><tr><th>導師</th><th>總堂數</th><th>已完成</th><th>完成率</th><th>學校數</th><th>班別數</th></tr></thead><tbody>{''.join(teacher_cards) or '<tr><td colspan="6" class="empty">沒有資料</td></tr>'}</tbody></table></div></div></section>
+
+            <section class="panel" data-panel="alerts"><div class="card"><div class="section-head"><div><h2>時間衝突警示</h2><p>共 {len(conflicts)} 宗，優先處理會重疊嘅導師安排。</p></div></div><div class="alerts">{''.join(conflict_cards) or '<div class="focus-card healthy"><strong>本月沒有時間衝突</strong><small>導師時段暫時正常。</small></div>'}</div>{f'<p class="empty">另外有 {len(conflicts) - 10} 宗未顯示。</p>' if len(conflicts) > 10 else ''}</div></section>
+        </main>
+        <script>
+        (function() {{
+            const tabs = Array.from(document.querySelectorAll('[data-tab]'));
+            const panels = Array.from(document.querySelectorAll('[data-panel]'));
+            const search = document.getElementById('monitor-search');
+            function openTab(name) {{
+                tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === name));
+                panels.forEach((panel) => panel.classList.toggle('active', panel.dataset.panel === name));
+                if (search) {{ search.value = ''; filterRows(''); }}
+            }}
+            function filterRows(value) {{
+                const query = String(value || '').trim().toLowerCase();
+                document.querySelectorAll('[data-search-row]').forEach((row) => {{
+                    row.hidden = !!query && !String(row.dataset.search || '').includes(query);
+                }});
+            }}
+            tabs.forEach((tab) => tab.addEventListener('click', () => openTab(tab.dataset.tab)));
+            document.querySelectorAll('[data-open-tab]').forEach((button) => button.addEventListener('click', () => openTab(button.dataset.openTab)));
+            if (search) search.addEventListener('input', () => filterRows(search.value));
+        }})();
+        </script>
     </body>
     </html>
     """
@@ -7062,6 +7167,55 @@ def _attendance_lesson_dates(notes: str) -> list[str]:
     return dates
 
 
+def _attendance_student_metadata(note: str) -> dict:
+    """Decode optional class/school details stored with a roster student."""
+    value = str(note or "").strip()
+    if not value:
+        return {"class_name": "", "school_name": ""}
+    try:
+        decoded = json.loads(value)
+        if isinstance(decoded, dict):
+            return {
+                "class_name": str(decoded.get("class_name") or "").strip(),
+                "school_name": str(decoded.get("school_name") or "").strip(),
+            }
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    parts = [part.strip() for part in re.split(r"\s*[|｜\t]\s*", value, maxsplit=1)]
+    if len(parts) == 2:
+        return {"class_name": parts[0], "school_name": parts[1]}
+    return {"class_name": "", "school_name": value}
+
+
+def _attendance_student_note(class_name: str = "", school_name: str = "") -> str:
+    return json.dumps(
+        {
+            "class_name": str(class_name or "").strip(),
+            "school_name": str(school_name or "").strip(),
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def _attendance_student_line(student_name: str, note: str = "") -> str:
+    metadata = _attendance_student_metadata(note)
+    if metadata["class_name"] or metadata["school_name"]:
+        return " | ".join((metadata["class_name"], str(student_name or "").strip(), metadata["school_name"]))
+    return str(student_name or "").strip()
+
+
+def _attendance_parse_student_line(line: str):
+    value = str(line or "").strip()
+    if not value:
+        return None
+    parts = [part.strip() for part in re.split(r"\s*[|｜\t]\s*", value, maxsplit=2)]
+    if len(parts) >= 3:
+        class_name, student_name, school_name = parts[0], parts[1], parts[2]
+        return student_name, class_name, school_name
+    return value, "", ""
+
+
 def _attendance_class_date_control(notes: str, today_date: str) -> str:
     lesson_dates = _attendance_lesson_dates(notes)
     if not lesson_dates:
@@ -7313,6 +7467,7 @@ def _attendance_daily_export_data(selected_area: str, class_date: str):
         for _student_id, student_name, display_order, note in _attendance_lesson_students_fetch(lesson_id):
             name = (student_name or "").strip()
             roster_names.add(name)
+            student_metadata = _attendance_student_metadata(note)
             attendance = {}
             for lesson_date in export_dates:
                 record = records_by_date_and_name.get(lesson_date, {}).get(name)
@@ -7322,7 +7477,8 @@ def _attendance_daily_export_data(selected_area: str, class_date: str):
                 }
             students.append({
                 "name": name,
-                "class_name": (note or "").strip(),
+                "class_name": student_metadata["class_name"],
+                "school_name": student_metadata["school_name"],
                 "attendance": attendance,
             })
 
@@ -7342,7 +7498,7 @@ def _attendance_daily_export_data(selected_area: str, class_date: str):
                     "status": (record[6] or "").strip() if record else "",
                     "reason": (record[7] or "").strip() if record else "",
                 }
-            students.append({"name": name, "class_name": "", "attendance": attendance})
+            students.append({"name": name, "class_name": "", "school_name": "", "attendance": attendance})
 
         sheets.append({
             "title": (class_title or "未命名課堂").strip(),
@@ -7406,7 +7562,7 @@ def _attendance_pdf_date_label(value: str):
 
 
 def _attendance_pdf_student_remark(student: dict, lesson_dates: list[str]):
-    remarks = []
+    remarks = [str(student.get("school_name") or "").strip()] if student.get("school_name") else []
     attendance = student.get("attendance") or {}
     for lesson_date in lesson_dates:
         record = attendance.get(lesson_date) or {}
@@ -7432,18 +7588,18 @@ def _attendance_pdf_draw_sheet(canvas_obj, sheet: dict, selected_area: str, clas
     label_x = margin + 6
     value_x = margin + 77
     top_y = page_height - 30
-    canvas_obj.setFont(font_name, 10.5)
+    canvas_obj.setFont(font_name, 12)
     canvas_obj.drawString(label_x, top_y, "活動資料：")
-    _attendance_pdf_fit_text(canvas_obj, activity, value_x, top_y, 395, font_name, 10.5)
+    _attendance_pdf_fit_text(canvas_obj, activity, value_x, top_y, 395, font_name, 12)
     canvas_obj.drawString(label_x, top_y - 21, "時　　間：")
     time_text = " ".join(item for item in [sheet.get("weekday"), sheet.get("time")] if item)
-    _attendance_pdf_fit_text(canvas_obj, f"逢{time_text}" if time_text else "", value_x, top_y - 21, 280, font_name, 10)
+    _attendance_pdf_fit_text(canvas_obj, f"逢{time_text}" if time_text else "", value_x, top_y - 21, 280, font_name, 11.5)
     canvas_obj.drawString(margin + 390, top_y - 21, "導　　師：")
-    _attendance_pdf_fit_text(canvas_obj, sheet.get("teachers"), margin + 458, top_y - 21, 130, font_name, 10)
+    _attendance_pdf_fit_text(canvas_obj, sheet.get("teachers"), margin + 458, top_y - 21, 130, font_name, 11.5)
     canvas_obj.drawString(label_x, top_y - 42, "課　　室：")
-    _attendance_pdf_fit_text(canvas_obj, sheet.get("venue"), value_x, top_y - 42, 280, font_name, 10)
+    _attendance_pdf_fit_text(canvas_obj, sheet.get("venue"), value_x, top_y - 42, 280, font_name, 11.5)
     canvas_obj.drawString(margin + 390, top_y - 42, "聯絡電話：")
-    canvas_obj.setFont(font_name, 7.5)
+    canvas_obj.setFont(font_name, 8.5)
     canvas_obj.drawCentredString(408, top_y - 55, "※※※ 請導師於第一堂核對學生姓名及參與人數是否正確 ※※※")
 
     section_x = page_width - 229
@@ -7452,7 +7608,7 @@ def _attendance_pdf_draw_sheet(canvas_obj, sheet: dict, selected_area: str, clas
     section_h = 68
     canvas_obj.setLineWidth(1.7)
     canvas_obj.rect(section_x, section_y, section_w, section_h, fill=0, stroke=1)
-    _attendance_pdf_center_text(canvas_obj, section, section_x, section_y + 17, section_w, font_name, 26)
+    _attendance_pdf_center_text(canvas_obj, section, section_x, section_y + 16, section_w, font_name, 30)
 
     table_left = margin
     table_right = page_width - margin
@@ -7489,13 +7645,13 @@ def _attendance_pdf_draw_sheet(canvas_obj, sheet: dict, selected_area: str, clas
         (remarks_x, remarks_width, "備註"),
     ):
         canvas_obj.rect(cell_x, table_top - header_height, cell_width, header_height, fill=0, stroke=1)
-        _attendance_pdf_center_text(canvas_obj, label, cell_x, table_top - 21, cell_width, font_name, 7.5)
+        _attendance_pdf_center_text(canvas_obj, label, cell_x, table_top - 22, cell_width, font_name, 9)
     canvas_obj.rect(dates_x, table_top - header_row_height, dates_width, header_row_height, fill=0, stroke=1)
-    _attendance_pdf_center_text(canvas_obj, "上課日期", dates_x, table_top - 12, dates_width, font_name, 7.5)
+    _attendance_pdf_center_text(canvas_obj, "上課日期", dates_x, table_top - 12, dates_width, font_name, 9)
     for index, lesson_date in enumerate(lesson_dates):
         cell_x = dates_x + (index * date_width)
         canvas_obj.rect(cell_x, table_top - header_height, date_width, header_row_height, fill=0, stroke=1)
-        _attendance_pdf_center_text(canvas_obj, _attendance_pdf_date_label(lesson_date), cell_x, table_top - 28, date_width, font_name, 6.8)
+        _attendance_pdf_center_text(canvas_obj, _attendance_pdf_date_label(lesson_date), cell_x, table_top - 28, date_width, font_name, 8)
 
     status_labels = {"present": "✓", "absent": "缺", "dropped": "退", "": ""}
     y = table_top - header_height
@@ -7515,16 +7671,16 @@ def _attendance_pdf_draw_sheet(canvas_obj, sheet: dict, selected_area: str, clas
         for cell_x, cell_width, value in cell_specs:
             canvas_obj.rect(cell_x, row_bottom, cell_width, row_height, fill=0, stroke=1)
             if cell_x == name_x:
-                _attendance_pdf_fit_text(canvas_obj, value, cell_x + 4, baseline, cell_width - 8, font_name, 7)
+                _attendance_pdf_fit_text(canvas_obj, value, cell_x + 4, baseline, cell_width - 8, font_name, 8.4)
             else:
-                _attendance_pdf_center_text(canvas_obj, value, cell_x, baseline, cell_width, font_name, 6.6)
+                _attendance_pdf_center_text(canvas_obj, value, cell_x, baseline, cell_width, font_name, 8)
         attendance = student.get("attendance") or {}
         for date_index, lesson_date in enumerate(lesson_dates):
             cell_x = dates_x + (date_index * date_width)
             record = attendance.get(lesson_date) or {}
             status = record.get("status") if record.get("status") in status_labels else ""
             canvas_obj.rect(cell_x, row_bottom, date_width, row_height, fill=0, stroke=1)
-            _attendance_pdf_center_text(canvas_obj, status_labels[status], cell_x, baseline, date_width, font_name, 7.2)
+            _attendance_pdf_center_text(canvas_obj, status_labels[status], cell_x, baseline, date_width, font_name, 8.5)
         canvas_obj.rect(remarks_x, row_bottom, remarks_width, row_height, fill=0, stroke=1)
         _attendance_pdf_fit_text(
             canvas_obj,
@@ -7533,7 +7689,7 @@ def _attendance_pdf_draw_sheet(canvas_obj, sheet: dict, selected_area: str, clas
             baseline,
             remarks_width - 8,
             font_name,
-            6.4,
+            7.8,
         )
         y = row_bottom
 
@@ -8760,7 +8916,7 @@ async def attendance_students_add(
 def _attendance_manage_group_card(request: Request, group_row):
     group_id, area, class_title, weekday, lesson_time, class_category, teacher_name, school_name, notes, sort_order, is_demo, is_active = group_row
     student_rows = _attendance_lesson_students_fetch(group_id)
-    student_text = "\n".join(row[1] for row in student_rows)
+    student_text = "\n".join(_attendance_student_line(row[1], row[3]) for row in student_rows)
     return f"""
     <div class="panel">
         <h3>課堂 #{group_id}</h3>
@@ -8787,8 +8943,9 @@ def _attendance_manage_group_card(request: Request, group_row):
         <form method="post" action="/attendance/groups/{group_id}/students/save" class="stack" style="margin-top:14px;">
             {_csrf_input_html(request)}
             <div class="field">
-                <label>學生名單</label>
-                <textarea name="student_names" placeholder="每行一位學生">{html.escape(student_text)}</textarea>
+                <label>學生名單及資料</label>
+                <div style="color:#6b7280;font-size:12px;line-height:1.5;">每行格式：班別 | 學生姓名 | 所屬學校。只輸入姓名亦可，系統會保留已儲存資料。</div>
+                <textarea name="student_names" placeholder="K2 | 陳小明 | 示範幼稚園">{html.escape(student_text)}</textarea>
             </div>
             <div class="btn-row">
                 <button type="submit" class="btn secondary">更新學生名單</button>
@@ -8985,25 +9142,38 @@ async def attendance_group_students_save(
     group = _attendance_lesson_group_fetch(group_id)
     if not group:
         return RedirectResponse("/attendance/manage?notice=empty", status_code=303)
-    names = []
+    existing_rows = _attendance_lesson_students_fetch(group_id)
+    existing_notes = {(row[1] or "").strip(): (row[3] or "") for row in existing_rows}
+    students = []
+    seen_names = set()
     for line in (student_names or "").splitlines():
-        item = line.strip()
-        if item and item not in names:
-            names.append(item)
+        parsed = _attendance_parse_student_line(line)
+        if not parsed:
+            continue
+        student_name, class_name, school_name = parsed
+        if not student_name or student_name in seen_names:
+            continue
+        seen_names.add(student_name)
+        note_value = (
+            _attendance_student_note(class_name, school_name)
+            if class_name or school_name
+            else existing_notes.get(student_name, "")
+        )
+        students.append((student_name, note_value))
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM attendance_lesson_students WHERE lesson_group_id=?", (group_id,))
-    for idx, name in enumerate(names, start=1):
+    for idx, (name, note_value) in enumerate(students, start=1):
         cursor.execute(
             """
-            INSERT INTO attendance_lesson_students (lesson_group_id, student_name, display_order, is_active, updated_at)
-            VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+            INSERT INTO attendance_lesson_students (lesson_group_id, student_name, display_order, note, is_active, updated_at)
+            VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
             """,
-            (group_id, name, idx),
+            (group_id, name, idx, note_value),
         )
     conn.commit()
     conn.close()
-    _audit_action_request(request, "attendance_group_students_save", target_type="attendance_lesson_group", target_id=str(group_id), actor=user, after={"count": len(names)})
+    _audit_action_request(request, "attendance_group_students_save", target_type="attendance_lesson_group", target_id=str(group_id), actor=user, after={"count": len(students)})
     return RedirectResponse("/attendance/manage?notice=group_saved", status_code=303)
 
 

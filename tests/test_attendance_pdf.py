@@ -18,6 +18,7 @@ class AttendancePdfTests(unittest.TestCase):
             students.append({
                 "name": f"測試學生 {number}-{index}",
                 "class_name": "K2",
+                "school_name": "元朗示範幼稚園",
                 "attendance": {
                     lesson_date: {
                         "status": status if lesson_date == "2026-10-25" else "",
@@ -54,8 +55,24 @@ class AttendancePdfTests(unittest.TestCase):
         self.assertIn("測試學生 4-31", extracted)
         self.assertIn("未能聯絡", extracted)
         self.assertIn("已退學", extracted)
+        self.assertIn("元朗示範幼稚園", extracted)
         self.assertIn("25/10", extracted)
         self.assertIn("22/11", extracted)
+
+    def test_student_metadata_round_trip_and_structured_line(self):
+        note = docmagic_app._attendance_student_note("K3", "元朗示範幼稚園")
+        self.assertEqual(
+            docmagic_app._attendance_student_metadata(note),
+            {"class_name": "K3", "school_name": "元朗示範幼稚園"},
+        )
+        self.assertEqual(
+            docmagic_app._attendance_parse_student_line("K3 | 陳小明 | 元朗示範幼稚園"),
+            ("陳小明", "K3", "元朗示範幼稚園"),
+        )
+        self.assertEqual(
+            docmagic_app._attendance_student_line("陳小明", note),
+            "K3 | 陳小明 | 元朗示範幼稚園",
+        )
 
     def test_attendance_page_contains_daily_pdf_button(self):
         source = inspect.getsource(docmagic_app._render_attendance_page)

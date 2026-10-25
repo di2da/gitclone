@@ -25,6 +25,15 @@ class SchoolMonitorTests(unittest.TestCase):
         self.assertIn("已完成／總堂數", source)
         self.assertGreaterEqual(source.count("HAVING COUNT(DISTINCT ss.id) > 0"), 3)
 
+    def test_monitor_prioritizes_management_focus_and_search(self):
+        source = inspect.getsource(docmagic_app._render_school_monitor_page)
+        self.assertIn("學校課堂營運總覽", source)
+        self.assertIn("管理焦點", source)
+        self.assertIn("本月關鍵數字", source)
+        self.assertIn("data-open-tab", source)
+        self.assertIn("monitor-search", source)
+        self.assertIn("progress-track", source)
+
 
 if __name__ == "__main__":
     unittest.main()
