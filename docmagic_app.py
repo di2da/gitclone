@@ -7285,6 +7285,205 @@ def _attendance_review_records_fetch(lesson_group_id: int, class_date: str):
     return rows
 
 
+def _attendance_daily_export_data(selected_area: str, class_date: str):
+    """Return the active lesson sheets that belong to an area's selected day."""
+    sheets = []
+    for group in _attendance_lesson_groups_fetch(selected_area):
+        lesson_id, area, class_title, weekday, lesson_time, class_category, teacher_name, school_name, notes, sort_order, is_demo, is_active = group
+        if is_demo:
+            continue
+        lesson_dates = _attendance_lesson_dates(notes or "")
+        records = _attendance_review_records_fetch(lesson_id, class_date)
+        if class_date not in lesson_dates and not records:
+            continue
+
+        records_by_name = {}
+        for record in records:
+            records_by_name.setdefault((record[2] or "").strip(), record)
+
+        students = []
+        roster_names = set()
+        for _student_id, student_name, display_order, note in _attendance_lesson_students_fetch(lesson_id):
+            name = (student_name or "").strip()
+            roster_names.add(name)
+            record = records_by_name.get(name)
+            students.append({
+                "name": name,
+                "status": (record[6] or "").strip() if record else "",
+                "reason": (record[7] or "").strip() if record else "",
+            })
+
+        # Preserve any same-day attendance records for students subsequently
+        # removed from the live roster, so the exported audit sheet is complete.
+        for record in records:
+            name = (record[2] or "").strip()
+            if name and name not in roster_names:
+                students.append({
+                    "name": name,
+                    "status": (record[6] or "").strip(),
+                    "reason": (record[7] or "").strip(),
+                })
+
+        sheets.append({
+            "title": (class_title or "未命名課堂").strip(),
+            "time": (lesson_time or "").strip(),
+            "weekday": (weekday or "").strip(),
+            "category": (class_category or "").strip(),
+            "teachers": (teacher_name or "").strip(),
+            "venue": (school_name or "").strip(),
+            "students": students,
+        })
+    return sheets
+
+
+def _attendance_pdf_font_name():
+    font_name = _register_reportlab_font_family(
+        "AttendanceChinese",
+        [("NotoSansTC-wght.ttf", None)],
+    )
+    if not font_name:
+        raise RuntimeError("Attendance PDF Chinese font is unavailable")
+    return font_name
+
+
+def _attendance_pdf_fit_text(canvas_obj, text: str, x: float, y: float, max_width: float, font_name: str, font_size: float):
+    value = str(text or "")
+    if pdfmetrics.stringWidth(value, font_name, font_size) > max_width:
+        suffix = "…"
+        while value and pdfmetrics.stringWidth(value + suffix, font_name, font_size) > max_width:
+            value = value[:-1]
+        value += suffix
+    canvas_obj.setFont(font_name, font_size)
+    canvas_obj.drawString(x, y, value)
+
+
+def _attendance_pdf_draw_sheet(canvas_obj, sheet: dict, x: float, top: float, width: float, bottom: float, font_name: str):
+    students = list(sheet.get("students") or [])
+    status_labels = {
+        "present": "出席",
+        "absent": "缺席",
+        "dropped": "已退學",
+        "": "未點名",
+    }
+    counts = {key: 0 for key in ("present", "absent", "dropped", "")}
+    for student in students:
+        status = student.get("status") if student.get("status") in counts else ""
+        counts[status] += 1
+
+    header_height = 42
+    table_header_height = 16
+    canvas_obj.setFillColor(colors.HexColor("#E9F2FF"))
+    canvas_obj.roundRect(x, top - header_height, width, header_height, 7, fill=1, stroke=0)
+    canvas_obj.setFillColor(colors.HexColor("#143A63"))
+    _attendance_pdf_fit_text(canvas_obj, sheet.get("title"), x + 9, top - 15, width - 18, font_name, 10.5)
+    details = " · ".join(item for item in [sheet.get("time"), sheet.get("teachers"), sheet.get("venue"), sheet.get("category")] if item)
+    _attendance_pdf_fit_text(canvas_obj, details, x + 9, top - 29, width - 18, font_name, 7.2)
+    summary = f"出席 {counts['present']}  缺席 {counts['absent']}  已退學 {counts['dropped']}  未點名 {counts['']}"
+    _attendance_pdf_fit_text(canvas_obj, summary, x + 9, top - 39, width - 18, font_name, 6.5)
+
+    table_top = top - header_height - 5
+    row_count = max(1, len(students))
+    available_rows_height = table_top - table_header_height - bottom
+    row_height = min(12.5, available_rows_height / row_count)
+    row_height = max(8.2, row_height)
+    col_no = 22
+    col_status = 48
+    col_reason = 70
+    col_name = width - col_no - col_status - col_reason
+    col_positions = [x, x + col_no, x + col_no + col_name, x + col_no + col_name + col_status, x + width]
+
+    canvas_obj.setFillColor(colors.HexColor("#355C7D"))
+    canvas_obj.rect(x, table_top - table_header_height, width, table_header_height, fill=1, stroke=0)
+    canvas_obj.setFillColor(colors.white)
+    for label, left, cell_width in zip(
+        ("#", "學生", "狀態", "缺席原因"),
+        col_positions[:-1],
+        (col_no, col_name, col_status, col_reason),
+    ):
+        _attendance_pdf_fit_text(canvas_obj, label, left + 4, table_top - 11, cell_width - 8, font_name, 7.2)
+
+    y = table_top - table_header_height
+    if not students:
+        canvas_obj.setFillColor(colors.HexColor("#64748B"))
+        _attendance_pdf_fit_text(canvas_obj, "此課堂未有學生名單", x + 7, y - 12, width - 14, font_name, 7.5)
+        return
+
+    for index, student in enumerate(students, start=1):
+        row_bottom = y - row_height
+        canvas_obj.setFillColor(colors.HexColor("#F7FAFC") if index % 2 == 0 else colors.white)
+        canvas_obj.rect(x, row_bottom, width, row_height, fill=1, stroke=0)
+        status = student.get("status") if student.get("status") in status_labels else ""
+        if status == "absent":
+            canvas_obj.setFillColor(colors.HexColor("#B42318"))
+        elif status == "dropped":
+            canvas_obj.setFillColor(colors.HexColor("#6B7280"))
+        elif status == "present":
+            canvas_obj.setFillColor(colors.HexColor("#137333"))
+        else:
+            canvas_obj.setFillColor(colors.HexColor("#475569"))
+        baseline = row_bottom + max(2.0, (row_height - 7.0) / 2)
+        _attendance_pdf_fit_text(canvas_obj, str(index), col_positions[0] + 4, baseline, col_no - 8, font_name, 6.8)
+        canvas_obj.setFillColor(colors.HexColor("#172B4D"))
+        _attendance_pdf_fit_text(canvas_obj, student.get("name"), col_positions[1] + 4, baseline, col_name - 8, font_name, 7.1)
+        _attendance_pdf_fit_text(canvas_obj, status_labels[status], col_positions[2] + 4, baseline, col_status - 8, font_name, 7.0)
+        _attendance_pdf_fit_text(canvas_obj, student.get("reason"), col_positions[3] + 4, baseline, col_reason - 8, font_name, 6.8)
+        canvas_obj.setStrokeColor(colors.HexColor("#D9E2EC"))
+        canvas_obj.setLineWidth(0.35)
+        canvas_obj.line(x, row_bottom, x + width, row_bottom)
+        y = row_bottom
+
+    canvas_obj.setStrokeColor(colors.HexColor("#A9B8C8"))
+    canvas_obj.setLineWidth(0.5)
+    canvas_obj.rect(x, y, width, table_top - y, fill=0, stroke=1)
+    for position in col_positions[1:-1]:
+        canvas_obj.line(position, y, position, table_top)
+
+
+def _build_attendance_daily_pdf(selected_area: str, class_date: str, sheets: list[dict]) -> bytes:
+    if not REPORTLAB_AVAILABLE:
+        raise RuntimeError("ReportLab is required to export attendance PDFs")
+    font_name = _attendance_pdf_font_name()
+    buffer = io.BytesIO()
+    page_size = (A4[1], A4[0])
+    page_width, page_height = page_size
+    pdf = canvas.Canvas(buffer, pagesize=page_size, pageCompression=1)
+    pdf.setTitle(f"本日點名紙 - {selected_area} - {class_date}")
+    pdf.setAuthor("Dance Kingdom")
+    pdf.setSubject("學生點名記錄")
+
+    pages = [sheets[index:index + 2] for index in range(0, len(sheets), 2)] or [[]]
+    margin = 24
+    gap = 12
+    column_width = (page_width - (2 * margin) - gap) / 2
+    for page_number, page_sheets in enumerate(pages, start=1):
+        pdf.setFillColor(colors.HexColor("#102A43"))
+        pdf.setFont(font_name, 16)
+        pdf.drawString(margin, page_height - 30, "本日點名紙")
+        pdf.setFont(font_name, 8)
+        pdf.setFillColor(colors.HexColor("#486581"))
+        total_students = sum(len(sheet.get("students") or []) for sheet in page_sheets)
+        pdf.drawRightString(page_width - margin, page_height - 27, f"{selected_area} · {class_date} · 本頁 {len(page_sheets)} 班 / {total_students} 位學生")
+        pdf.setStrokeColor(colors.HexColor("#BCCCDC"))
+        pdf.line(margin, page_height - 38, page_width - margin, page_height - 38)
+
+        if not page_sheets:
+            pdf.setFillColor(colors.HexColor("#64748B"))
+            pdf.setFont(font_name, 11)
+            pdf.drawCentredString(page_width / 2, page_height / 2, "本日沒有相關課堂或點名資料")
+        for column_index, sheet in enumerate(page_sheets):
+            x = margin + column_index * (column_width + gap)
+            _attendance_pdf_draw_sheet(pdf, sheet, x, page_height - 50, column_width, 30, font_name)
+
+        pdf.setFillColor(colors.HexColor("#829AB1"))
+        pdf.setFont(font_name, 6.5)
+        pdf.drawString(margin, 15, "Dance Kingdom 學生點名系統")
+        pdf.drawRightString(page_width - margin, 15, f"第 {page_number} / {len(pages)} 頁")
+        pdf.showPage()
+
+    pdf.save()
+    return buffer.getvalue()
+
+
 def _render_attendance_page(
     request: Request,
     notice: str = "",
@@ -7419,6 +7618,11 @@ def _render_attendance_page(
     selected_area_label = selected_area if selected_area and selected_area != "all" else "全部地區"
     role_label = _normalize_role(user[3]) if user else "guest"
     admin_manage_button = '<a href="/attendance/manage" class="btn secondary">管理課堂資料</a>' if role_label == "admin" else ""
+    if selected_area and selected_area != "all":
+        daily_pdf_query = urlencode({"area": selected_area, "class_date": today_date})
+        daily_pdf_button = f'<a href="/attendance/daily.pdf?{html.escape(daily_pdf_query, quote=True)}" class="btn">本日點名紙導出</a>'
+    else:
+        daily_pdf_button = '<span class="btn" style="opacity:.48;pointer-events:none;" title="請先選擇地區">本日點名紙導出</span>'
     selected_teacher_label = teacher_filter if teacher_filter and teacher_filter != "all" else "全部導師"
     selected_category_label = category_filter if category_filter and category_filter != "all" else "全部類別"
     selected_status_label = "全部狀態" if not status_filter or status_filter == "all" else ("出席" if status_filter == "present" else ("缺席" if status_filter == "absent" else ("已退學" if status_filter == "dropped" else status_filter)))
@@ -7873,6 +8077,7 @@ def _render_attendance_page(
                         <p class="muted">三步完成。</p>
                     </div>
                         <div class="btn-row">
+                            {daily_pdf_button}
                             <a class="btn secondary" href="/attendance">重設</a>
                             <a class="btn secondary" href="/dashboard">返回主目錄</a>
                             {admin_manage_button}
@@ -8176,6 +8381,35 @@ async def attendance_export_csv(
         date_from=date_from,
         date_to=date_to,
     )
+
+
+@app.get("/attendance/daily.pdf")
+async def attendance_daily_pdf(
+    request: Request,
+    area: str = Query(default=""),
+    class_date: str = Query(default=""),
+    user: tuple = Depends(require_roles("admin", "tutor")),
+):
+    selected_area = (area or "").strip()
+    if not selected_area or selected_area == "all" or selected_area not in ATTENDANCE_AREA_OPTIONS:
+        raise HTTPException(status_code=400, detail="請先選擇有效地區")
+    selected_date = (class_date or _hk_today().isoformat()).strip()
+    try:
+        datetime.strptime(selected_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="課堂日期格式不正確")
+
+    sheets = _attendance_daily_export_data(selected_area, selected_date)
+    pdf_bytes = _build_attendance_daily_pdf(selected_area, selected_date, sheets)
+    chinese_filename = f"{selected_area}_{selected_date}_本日點名紙.pdf"
+    headers = {
+        "Content-Disposition": (
+            f'attachment; filename="attendance-{selected_date}.pdf"; '
+            f"filename*=UTF-8''{quote(chinese_filename)}"
+        ),
+        "Cache-Control": "no-store",
+    }
+    return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
 
 
 @app.post("/attendance/submit")
