@@ -5857,6 +5857,7 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
             AND ss.session_date BETWEEN ? AND ?
         WHERE sc.is_active = 1
         GROUP BY sc.id, sc.name
+        HAVING COUNT(DISTINCT ss.id) > 0
         ORDER BY total_sessions DESC, sc.name
         """,
         (today_iso, month_start.isoformat(), month_end.isoformat()),
@@ -5900,6 +5901,7 @@ def _render_school_monitor_page(request: Request, year: int = None, month: int =
             AND ss.session_date BETWEEN ? AND ?
         WHERE t.is_active = 1
         GROUP BY t.id, t.name
+        HAVING COUNT(DISTINCT ss.id) > 0
         ORDER BY total_sessions DESC, t.name
         """,
         (today_iso, month_start.isoformat(), month_end.isoformat()),

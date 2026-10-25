@@ -23,6 +23,7 @@ class SchoolMonitorTests(unittest.TestCase):
         self.assertIn("整體進度", source)
         self.assertIn("班別課堂進度", source)
         self.assertIn("已完成／總堂數", source)
+        self.assertGreaterEqual(source.count("HAVING COUNT(DISTINCT ss.id) > 0"), 3)
 
 
 if __name__ == "__main__":
