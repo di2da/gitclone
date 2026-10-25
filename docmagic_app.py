@@ -7293,36 +7293,56 @@ def _attendance_daily_export_data(selected_area: str, class_date: str):
         if is_demo:
             continue
         lesson_dates = _attendance_lesson_dates(notes or "")
-        records = _attendance_review_records_fetch(lesson_id, class_date)
-        if class_date not in lesson_dates and not records:
+        export_dates = lesson_dates or [class_date]
+        records_by_date = {
+            lesson_date: _attendance_review_records_fetch(lesson_id, lesson_date)
+            for lesson_date in export_dates
+        }
+        selected_date_records = records_by_date.get(class_date) or _attendance_review_records_fetch(lesson_id, class_date)
+        if class_date not in lesson_dates and not selected_date_records:
             continue
 
-        records_by_name = {}
-        for record in records:
-            records_by_name.setdefault((record[2] or "").strip(), record)
+        records_by_date_and_name = {}
+        for lesson_date, date_records in records_by_date.items():
+            records_by_date_and_name[lesson_date] = {}
+            for record in date_records:
+                records_by_date_and_name[lesson_date].setdefault((record[2] or "").strip(), record)
 
         students = []
         roster_names = set()
         for _student_id, student_name, display_order, note in _attendance_lesson_students_fetch(lesson_id):
             name = (student_name or "").strip()
             roster_names.add(name)
-            record = records_by_name.get(name)
+            attendance = {}
+            for lesson_date in export_dates:
+                record = records_by_date_and_name.get(lesson_date, {}).get(name)
+                attendance[lesson_date] = {
+                    "status": (record[6] or "").strip() if record else "",
+                    "reason": (record[7] or "").strip() if record else "",
+                }
             students.append({
                 "name": name,
-                "status": (record[6] or "").strip() if record else "",
-                "reason": (record[7] or "").strip() if record else "",
+                "class_name": (note or "").strip(),
+                "attendance": attendance,
             })
 
-        # Preserve any same-day attendance records for students subsequently
+        # Preserve records for students subsequently
         # removed from the live roster, so the exported audit sheet is complete.
-        for record in records:
-            name = (record[2] or "").strip()
-            if name and name not in roster_names:
-                students.append({
-                    "name": name,
-                    "status": (record[6] or "").strip(),
-                    "reason": (record[7] or "").strip(),
-                })
+        all_record_names = []
+        for date_records in records_by_date.values():
+            for record in date_records:
+                name = (record[2] or "").strip()
+                if name and name not in roster_names and name not in all_record_names:
+                    all_record_names.append(name)
+        for name in all_record_names:
+            attendance = {}
+            for lesson_date in export_dates:
+                record = records_by_date_and_name.get(lesson_date, {}).get(name)
+                attendance[lesson_date] = {
+                    "status": (record[6] or "").strip() if record else "",
+                    "reason": (record[7] or "").strip() if record else "",
+                }
+            students.append({"name": name, "class_name": "", "attendance": attendance})
 
         sheets.append({
             "title": (class_title or "未命名課堂").strip(),
@@ -7331,6 +7351,7 @@ def _attendance_daily_export_data(selected_area: str, class_date: str):
             "category": (class_category or "").strip(),
             "teachers": (teacher_name or "").strip(),
             "venue": (school_name or "").strip(),
+            "dates": export_dates,
             "students": students,
         })
     return sheets
@@ -7357,86 +7378,169 @@ def _attendance_pdf_fit_text(canvas_obj, text: str, x: float, y: float, max_widt
     canvas_obj.drawString(x, y, value)
 
 
-def _attendance_pdf_draw_sheet(canvas_obj, sheet: dict, x: float, top: float, width: float, bottom: float, font_name: str):
-    students = list(sheet.get("students") or [])
-    status_labels = {
-        "present": "出席",
-        "absent": "缺席",
-        "dropped": "已退學",
-        "": "未點名",
-    }
-    counts = {key: 0 for key in ("present", "absent", "dropped", "")}
-    for student in students:
-        status = student.get("status") if student.get("status") in counts else ""
-        counts[status] += 1
+def _attendance_pdf_center_text(canvas_obj, text: str, x: float, y: float, width: float, font_name: str, font_size: float):
+    value = str(text or "")
+    while value and pdfmetrics.stringWidth(value, font_name, font_size) > width - 6:
+        value = value[:-1]
+    canvas_obj.setFont(font_name, font_size)
+    canvas_obj.drawCentredString(x + (width / 2), y, value)
 
-    header_height = 42
-    table_header_height = 16
-    canvas_obj.setFillColor(colors.HexColor("#E9F2FF"))
-    canvas_obj.roundRect(x, top - header_height, width, header_height, 7, fill=1, stroke=0)
-    canvas_obj.setFillColor(colors.HexColor("#143A63"))
-    _attendance_pdf_fit_text(canvas_obj, sheet.get("title"), x + 9, top - 15, width - 18, font_name, 10.5)
-    details = " · ".join(item for item in [sheet.get("time"), sheet.get("teachers"), sheet.get("venue"), sheet.get("category")] if item)
-    _attendance_pdf_fit_text(canvas_obj, details, x + 9, top - 29, width - 18, font_name, 7.2)
-    summary = f"出席 {counts['present']}  缺席 {counts['absent']}  已退學 {counts['dropped']}  未點名 {counts['']}"
-    _attendance_pdf_fit_text(canvas_obj, summary, x + 9, top - 39, width - 18, font_name, 6.5)
 
-    table_top = top - header_height - 5
-    row_count = max(1, len(students))
-    available_rows_height = table_top - table_header_height - bottom
-    row_height = min(12.5, available_rows_height / row_count)
-    row_height = max(8.2, row_height)
-    col_no = 22
-    col_status = 48
-    col_reason = 70
-    col_name = width - col_no - col_status - col_reason
-    col_positions = [x, x + col_no, x + col_no + col_name, x + col_no + col_name + col_status, x + width]
+def _attendance_pdf_title_parts(title: str):
+    value = str(title or "").strip()
+    parts = re.split(r"[｜|]", value, maxsplit=1)
+    if len(parts) == 2 and "節" in parts[0]:
+        return parts[1].strip(), parts[0].strip()
+    section_match = re.search(r"第\s*\d+\s*節(?:-[A-Za-z0-9]+)?", value)
+    section = section_match.group(0).strip() if section_match else value
+    activity = value.replace(section_match.group(0), "").strip(" ·｜|-") if section_match else value
+    return activity or value, section or value
 
-    canvas_obj.setFillColor(colors.HexColor("#355C7D"))
-    canvas_obj.rect(x, table_top - table_header_height, width, table_header_height, fill=1, stroke=0)
-    canvas_obj.setFillColor(colors.white)
-    for label, left, cell_width in zip(
-        ("#", "學生", "狀態", "缺席原因"),
-        col_positions[:-1],
-        (col_no, col_name, col_status, col_reason),
-    ):
-        _attendance_pdf_fit_text(canvas_obj, label, left + 4, table_top - 11, cell_width - 8, font_name, 7.2)
 
-    y = table_top - table_header_height
-    if not students:
-        canvas_obj.setFillColor(colors.HexColor("#64748B"))
-        _attendance_pdf_fit_text(canvas_obj, "此課堂未有學生名單", x + 7, y - 12, width - 14, font_name, 7.5)
-        return
+def _attendance_pdf_date_label(value: str):
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d")
+        return f"{parsed.day}/{parsed.month}"
+    except (TypeError, ValueError):
+        return str(value or "")
 
-    for index, student in enumerate(students, start=1):
-        row_bottom = y - row_height
-        canvas_obj.setFillColor(colors.HexColor("#F7FAFC") if index % 2 == 0 else colors.white)
-        canvas_obj.rect(x, row_bottom, width, row_height, fill=1, stroke=0)
-        status = student.get("status") if student.get("status") in status_labels else ""
-        if status == "absent":
-            canvas_obj.setFillColor(colors.HexColor("#B42318"))
+
+def _attendance_pdf_student_remark(student: dict, lesson_dates: list[str]):
+    remarks = []
+    attendance = student.get("attendance") or {}
+    for lesson_date in lesson_dates:
+        record = attendance.get(lesson_date) or {}
+        status = record.get("status") or ""
+        reason = record.get("reason") or ""
+        if status == "absent" and reason:
+            remarks.append(f"{_attendance_pdf_date_label(lesson_date)} {reason}")
         elif status == "dropped":
-            canvas_obj.setFillColor(colors.HexColor("#6B7280"))
-        elif status == "present":
-            canvas_obj.setFillColor(colors.HexColor("#137333"))
-        else:
-            canvas_obj.setFillColor(colors.HexColor("#475569"))
-        baseline = row_bottom + max(2.0, (row_height - 7.0) / 2)
-        _attendance_pdf_fit_text(canvas_obj, str(index), col_positions[0] + 4, baseline, col_no - 8, font_name, 6.8)
-        canvas_obj.setFillColor(colors.HexColor("#172B4D"))
-        _attendance_pdf_fit_text(canvas_obj, student.get("name"), col_positions[1] + 4, baseline, col_name - 8, font_name, 7.1)
-        _attendance_pdf_fit_text(canvas_obj, status_labels[status], col_positions[2] + 4, baseline, col_status - 8, font_name, 7.0)
-        _attendance_pdf_fit_text(canvas_obj, student.get("reason"), col_positions[3] + 4, baseline, col_reason - 8, font_name, 6.8)
-        canvas_obj.setStrokeColor(colors.HexColor("#D9E2EC"))
-        canvas_obj.setLineWidth(0.35)
-        canvas_obj.line(x, row_bottom, x + width, row_bottom)
+            remarks.append(f"{_attendance_pdf_date_label(lesson_date)} 已退學")
+    return "；".join(remarks)
+
+
+def _attendance_pdf_draw_sheet(canvas_obj, sheet: dict, selected_area: str, class_date: str, page_number: int, page_count: int, font_name: str):
+    page_width, page_height = (A4[1], A4[0])
+    margin = 21
+    activity, section = _attendance_pdf_title_parts(sheet.get("title"))
+    lesson_dates = list(sheet.get("dates") or [class_date])
+    students = list(sheet.get("students") or [])
+
+    canvas_obj.setFillColor(colors.black)
+    canvas_obj.setStrokeColor(colors.black)
+    canvas_obj.setLineWidth(0.65)
+    label_x = margin + 6
+    value_x = margin + 77
+    top_y = page_height - 30
+    canvas_obj.setFont(font_name, 10.5)
+    canvas_obj.drawString(label_x, top_y, "活動資料：")
+    _attendance_pdf_fit_text(canvas_obj, activity, value_x, top_y, 395, font_name, 10.5)
+    canvas_obj.drawString(label_x, top_y - 21, "時　　間：")
+    time_text = " ".join(item for item in [sheet.get("weekday"), sheet.get("time")] if item)
+    _attendance_pdf_fit_text(canvas_obj, f"逢{time_text}" if time_text else "", value_x, top_y - 21, 280, font_name, 10)
+    canvas_obj.drawString(margin + 390, top_y - 21, "導　　師：")
+    _attendance_pdf_fit_text(canvas_obj, sheet.get("teachers"), margin + 458, top_y - 21, 130, font_name, 10)
+    canvas_obj.drawString(label_x, top_y - 42, "課　　室：")
+    _attendance_pdf_fit_text(canvas_obj, sheet.get("venue"), value_x, top_y - 42, 280, font_name, 10)
+    canvas_obj.drawString(margin + 390, top_y - 42, "聯絡電話：")
+    canvas_obj.setFont(font_name, 7.5)
+    canvas_obj.drawCentredString(408, top_y - 55, "※※※ 請導師於第一堂核對學生姓名及參與人數是否正確 ※※※")
+
+    section_x = page_width - 229
+    section_y = page_height - 87
+    section_w = 208
+    section_h = 68
+    canvas_obj.setLineWidth(1.7)
+    canvas_obj.rect(section_x, section_y, section_w, section_h, fill=0, stroke=1)
+    _attendance_pdf_center_text(canvas_obj, section, section_x, section_y + 17, section_w, font_name, 26)
+
+    table_left = margin
+    table_right = page_width - margin
+    table_top = page_height - 96
+    header_row_height = 16
+    header_height = header_row_height * 2
+    row_total = max(30, len(students))
+    table_bottom = 25
+    row_height = (table_top - header_height - table_bottom) / row_total
+    no_width = 23
+    class_width = 39
+    name_width = 104
+    date_width = 38 if len(lesson_dates) <= 5 else max(26, 190 / len(lesson_dates))
+    dates_width = date_width * len(lesson_dates)
+    remarks_width = table_right - table_left - no_width - class_width - name_width - dates_width
+    if remarks_width < 110:
+        date_width = max(24, date_width - ((110 - remarks_width) / max(1, len(lesson_dates))))
+        dates_width = date_width * len(lesson_dates)
+        remarks_width = table_right - table_left - no_width - class_width - name_width - dates_width
+
+    no_x = table_left
+    class_x = no_x + no_width
+    name_x = class_x + class_width
+    dates_x = name_x + name_width
+    remarks_x = dates_x + dates_width
+    canvas_obj.setLineWidth(0.5)
+    canvas_obj.setFillColor(colors.HexColor("#F2F2F2"))
+    canvas_obj.rect(table_left, table_top - header_height, table_right - table_left, header_height, fill=1, stroke=0)
+    canvas_obj.setFillColor(colors.black)
+    for cell_x, cell_width, label in (
+        (no_x, no_width, ""),
+        (class_x, class_width, "班別"),
+        (name_x, name_width, "姓名"),
+        (remarks_x, remarks_width, "備註"),
+    ):
+        canvas_obj.rect(cell_x, table_top - header_height, cell_width, header_height, fill=0, stroke=1)
+        _attendance_pdf_center_text(canvas_obj, label, cell_x, table_top - 21, cell_width, font_name, 7.5)
+    canvas_obj.rect(dates_x, table_top - header_row_height, dates_width, header_row_height, fill=0, stroke=1)
+    _attendance_pdf_center_text(canvas_obj, "上課日期", dates_x, table_top - 12, dates_width, font_name, 7.5)
+    for index, lesson_date in enumerate(lesson_dates):
+        cell_x = dates_x + (index * date_width)
+        canvas_obj.rect(cell_x, table_top - header_height, date_width, header_row_height, fill=0, stroke=1)
+        _attendance_pdf_center_text(canvas_obj, _attendance_pdf_date_label(lesson_date), cell_x, table_top - 28, date_width, font_name, 6.8)
+
+    status_labels = {"present": "✓", "absent": "缺", "dropped": "退", "": ""}
+    y = table_top - header_height
+    for row_index in range(1, row_total + 1):
+        row_bottom = y - row_height
+        student = students[row_index - 1] if row_index <= len(students) else {}
+        if row_index % 2 == 0:
+            canvas_obj.setFillColor(colors.HexColor("#FAFAFA"))
+            canvas_obj.rect(table_left, row_bottom, table_right - table_left, row_height, fill=1, stroke=0)
+        canvas_obj.setFillColor(colors.black)
+        cell_specs = [
+            (no_x, no_width, str(row_index)),
+            (class_x, class_width, student.get("class_name") or ""),
+            (name_x, name_width, student.get("name") or ""),
+        ]
+        baseline = row_bottom + max(2.3, (row_height - 7) / 2)
+        for cell_x, cell_width, value in cell_specs:
+            canvas_obj.rect(cell_x, row_bottom, cell_width, row_height, fill=0, stroke=1)
+            if cell_x == name_x:
+                _attendance_pdf_fit_text(canvas_obj, value, cell_x + 4, baseline, cell_width - 8, font_name, 7)
+            else:
+                _attendance_pdf_center_text(canvas_obj, value, cell_x, baseline, cell_width, font_name, 6.6)
+        attendance = student.get("attendance") or {}
+        for date_index, lesson_date in enumerate(lesson_dates):
+            cell_x = dates_x + (date_index * date_width)
+            record = attendance.get(lesson_date) or {}
+            status = record.get("status") if record.get("status") in status_labels else ""
+            canvas_obj.rect(cell_x, row_bottom, date_width, row_height, fill=0, stroke=1)
+            _attendance_pdf_center_text(canvas_obj, status_labels[status], cell_x, baseline, date_width, font_name, 7.2)
+        canvas_obj.rect(remarks_x, row_bottom, remarks_width, row_height, fill=0, stroke=1)
+        _attendance_pdf_fit_text(
+            canvas_obj,
+            _attendance_pdf_student_remark(student, lesson_dates),
+            remarks_x + 4,
+            baseline,
+            remarks_width - 8,
+            font_name,
+            6.4,
+        )
         y = row_bottom
 
-    canvas_obj.setStrokeColor(colors.HexColor("#A9B8C8"))
-    canvas_obj.setLineWidth(0.5)
-    canvas_obj.rect(x, y, width, table_top - y, fill=0, stroke=1)
-    for position in col_positions[1:-1]:
-        canvas_obj.line(position, y, position, table_top)
+    canvas_obj.setFillColor(colors.HexColor("#666666"))
+    canvas_obj.setFont(font_name, 6.2)
+    canvas_obj.drawString(margin, 12, f"{selected_area} · 匯出日期 {class_date}")
+    canvas_obj.drawRightString(page_width - margin, 12, f"第 {page_number} / {page_count} 頁")
 
 
 def _build_attendance_daily_pdf(selected_area: str, class_date: str, sheets: list[dict]) -> bytes:
@@ -7451,33 +7555,14 @@ def _build_attendance_daily_pdf(selected_area: str, class_date: str, sheets: lis
     pdf.setAuthor("Dance Kingdom")
     pdf.setSubject("學生點名記錄")
 
-    pages = [sheets[index:index + 2] for index in range(0, len(sheets), 2)] or [[]]
-    margin = 24
-    gap = 12
-    column_width = (page_width - (2 * margin) - gap) / 2
-    for page_number, page_sheets in enumerate(pages, start=1):
-        pdf.setFillColor(colors.HexColor("#102A43"))
-        pdf.setFont(font_name, 16)
-        pdf.drawString(margin, page_height - 30, "本日點名紙")
-        pdf.setFont(font_name, 8)
-        pdf.setFillColor(colors.HexColor("#486581"))
-        total_students = sum(len(sheet.get("students") or []) for sheet in page_sheets)
-        pdf.drawRightString(page_width - margin, page_height - 27, f"{selected_area} · {class_date} · 本頁 {len(page_sheets)} 班 / {total_students} 位學生")
-        pdf.setStrokeColor(colors.HexColor("#BCCCDC"))
-        pdf.line(margin, page_height - 38, page_width - margin, page_height - 38)
-
-        if not page_sheets:
+    pages = sheets or [None]
+    for page_number, sheet in enumerate(pages, start=1):
+        if sheet:
+            _attendance_pdf_draw_sheet(pdf, sheet, selected_area, class_date, page_number, len(pages), font_name)
+        else:
             pdf.setFillColor(colors.HexColor("#64748B"))
             pdf.setFont(font_name, 11)
             pdf.drawCentredString(page_width / 2, page_height / 2, "本日沒有相關課堂或點名資料")
-        for column_index, sheet in enumerate(page_sheets):
-            x = margin + column_index * (column_width + gap)
-            _attendance_pdf_draw_sheet(pdf, sheet, x, page_height - 50, column_width, 30, font_name)
-
-        pdf.setFillColor(colors.HexColor("#829AB1"))
-        pdf.setFont(font_name, 6.5)
-        pdf.drawString(margin, 15, "Dance Kingdom 學生點名系統")
-        pdf.drawRightString(page_width - margin, 15, f"第 {page_number} / {len(pages)} 頁")
         pdf.showPage()
 
     pdf.save()

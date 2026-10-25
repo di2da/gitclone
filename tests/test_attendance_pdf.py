@@ -11,39 +11,51 @@ class AttendancePdfTests(unittest.TestCase):
     @staticmethod
     def _sheet(number, student_count):
         statuses = ["present", "absent", "dropped", ""]
+        lesson_dates = ["2026-10-25", "2026-11-01", "2026-11-08", "2026-11-15", "2026-11-22"]
         students = []
         for index in range(1, student_count + 1):
             status = statuses[(index - 1) % len(statuses)]
             students.append({
                 "name": f"測試學生 {number}-{index}",
-                "status": status,
-                "reason": "未能聯絡" if status == "absent" else "",
+                "class_name": "K2",
+                "attendance": {
+                    lesson_date: {
+                        "status": status if lesson_date == "2026-10-25" else "",
+                        "reason": "未能聯絡" if lesson_date == "2026-10-25" and status == "absent" else "",
+                    }
+                    for lesson_date in lesson_dates
+                },
             })
         return {
-            "title": f"2026-2027 第一期幼兒 KPOP 第 {number} 節",
+            "title": f"第 {number} 節-{chr(67 + number)}｜2026-2027 第一期幼兒 KPOP 舞動全城計劃",
             "time": f"{8 + number:02d}:00–{8 + number:02d}:50",
             "weekday": "星期日",
             "category": "KPOP",
             "teachers": "Sammi, Ruby",
             "venue": "一樓禮堂",
+            "dates": lesson_dates,
             "students": students,
         }
 
-    def test_four_classes_export_as_two_page_landscape_pdf(self):
+    def test_four_classes_export_as_four_page_landscape_pdf(self):
         sheets = [self._sheet(1, 29), self._sheet(2, 28), self._sheet(3, 30), self._sheet(4, 31)]
         pdf_bytes = docmagic_app._build_attendance_daily_pdf("元朗", "2026-10-25", sheets)
 
         self.assertTrue(pdf_bytes.startswith(b"%PDF"))
         reader = PdfReader(io.BytesIO(pdf_bytes))
-        self.assertEqual(len(reader.pages), 2)
+        self.assertEqual(len(reader.pages), 4)
         self.assertGreater(float(reader.pages[0].mediabox.width), float(reader.pages[0].mediabox.height))
         extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
-        self.assertIn("本日點名紙", extracted)
+        self.assertIn("活動資料", extracted)
+        self.assertIn("上課日期", extracted)
+        self.assertIn("班別", extracted)
         self.assertIn("元朗", extracted)
         self.assertIn("第 4 節", extracted)
         self.assertIn("測試學生 4-31", extracted)
         self.assertIn("未能聯絡", extracted)
         self.assertIn("已退學", extracted)
+        self.assertIn("25/10", extracted)
+        self.assertIn("22/11", extracted)
 
     def test_attendance_page_contains_daily_pdf_button(self):
         source = inspect.getsource(docmagic_app._render_attendance_page)
