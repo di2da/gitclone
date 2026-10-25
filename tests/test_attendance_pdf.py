@@ -74,6 +74,12 @@ class AttendancePdfTests(unittest.TestCase):
             "K3 | 陳小明 | 元朗示範幼稚園",
         )
 
+    def test_pdf_font_covers_traditional_and_simplified_student_names(self):
+        font_name = docmagic_app._attendance_pdf_font_name()
+        face = docmagic_app.pdfmetrics.getFont(font_name).face
+        for character in "張张銳锐許梓晞":
+            self.assertTrue(face.charToGlyph.get(ord(character), 0), character)
+
     def test_attendance_page_contains_daily_pdf_button(self):
         source = inspect.getsource(docmagic_app._render_attendance_page)
         self.assertIn("本日點名紙導出", source)

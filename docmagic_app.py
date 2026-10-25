@@ -7516,7 +7516,10 @@ def _attendance_daily_export_data(selected_area: str, class_date: str):
 def _attendance_pdf_font_name():
     font_name = _register_reportlab_font_family(
         "AttendanceChinese",
-        [("NotoSansTC-wght.ttf", None)],
+        # Use the full Simplified Chinese family here: unlike the TC web-font
+        # subset it also contains names such as 張/张 and 銳/锐 while retaining
+        # the Traditional Chinese glyphs used throughout the sheet.
+        [("NotoSansSC-wght.ttf", None)],
     )
     if not font_name:
         raise RuntimeError("Attendance PDF Chinese font is unavailable")
