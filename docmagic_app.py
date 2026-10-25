@@ -6856,6 +6856,11 @@ def _attendance_status_badge(status: str):
     return "<span class='badge att-badge att-present'>✓ 出席</span>"
 
 
+def _attendance_normalize_status(status: str) -> str:
+    value = str(status or "").strip().lower()
+    return value if value in {"present", "absent", "dropped"} else "present"
+
+
 def _attendance_area_options_html(selected_value: str = ""):
     pieces = ['<option value="">請選擇地區</option>']
     for area in ATTENDANCE_AREA_OPTIONS:
@@ -8062,8 +8067,7 @@ async def attendance_submit(
 
     prepared_rows = []
     for student_id, student_name, display_order, note in lesson_students:
-        status_value = (form.get(f"student_status_{student_id}") or "present").strip().lower()
-        status_value = "absent" if status_value == "absent" else "present"
+        status_value = _attendance_normalize_status(form.get(f"student_status_{student_id}"))
         reason_value = (form.get(f"absence_reason_{student_id}") or "").strip() if status_value == "absent" else ""
         if status_value == "absent" and not reason_value:
             raise HTTPException(status_code=400, detail=f"{student_name or '學生'} 缺席原因必須填寫")
@@ -8566,8 +8570,7 @@ async def _attendance_create_manual_record(
     date_value = class_date.strip()
     time_value = class_time.strip()
     category_value = class_category.strip()
-    raw_status = str(status or "").strip().lower()
-    status_value = raw_status if raw_status in {"present", "absent", "dropped"} else "present"
+    status_value = _attendance_normalize_status(status)
     reason_value = absence_reason.strip() if status_value == "absent" else ""
     if status_value == "absent" and not reason_value:
         raise HTTPException(status_code=400, detail="缺席原因必須填寫")
@@ -8666,8 +8669,7 @@ async def attendance_batch_create(
         student_value = (batch_student_name[idx] if idx < len(batch_student_name) else "").strip()
         if not student_value:
             continue
-        raw_status = str(batch_status[idx]).strip().lower() if idx < len(batch_status) else "present"
-        status_value = raw_status if raw_status in {"present", "absent", "dropped"} else "present"
+        status_value = _attendance_normalize_status(batch_status[idx] if idx < len(batch_status) else "present")
         reason_value = (batch_absence_reason[idx] if idx < len(batch_absence_reason) else "").strip() if status_value == "absent" else ""
         if status_value == "absent" and not reason_value:
             raise HTTPException(status_code=400, detail=f"{student_value} 缺席原因必須填寫")

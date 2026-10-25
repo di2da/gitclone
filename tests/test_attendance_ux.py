@@ -24,6 +24,17 @@ class AttendanceUxTests(unittest.TestCase):
         control = docmagic_app._attendance_class_date_control("沒有指定日期", "2026-10-25")
         self.assertIn('type="date"', control)
 
+    def test_attendance_status_preserves_dropped_students(self):
+        self.assertEqual(docmagic_app._attendance_normalize_status("dropped"), "dropped")
+        self.assertEqual(docmagic_app._attendance_normalize_status("absent"), "absent")
+        self.assertEqual(docmagic_app._attendance_normalize_status("present"), "present")
+        self.assertEqual(docmagic_app._attendance_normalize_status("unexpected"), "present")
+
+    def test_roster_submit_uses_shared_status_normalizer(self):
+        source = inspect.getsource(docmagic_app.attendance_submit)
+        self.assertIn("_attendance_normalize_status", source)
+        self.assertNotIn('"absent" if status_value == "absent" else "present"', source)
+
     def test_attendance_page_uses_distinct_colored_zones(self):
         source = inspect.getsource(docmagic_app._render_attendance_page)
         self.assertIn("flow-zone", source)
