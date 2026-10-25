@@ -49,6 +49,10 @@ class AttendanceUxTests(unittest.TestCase):
         self.assertIn('<select class="roster-reason"', row)
         self.assertNotIn('<input class="roster-reason"', row)
 
+    def test_attendance_page_script_has_no_optional_chain_assignment(self):
+        source = inspect.getsource(docmagic_app._render_attendance_page)
+        self.assertNotIn("?.textContent =", source)
+
     def test_attendance_page_uses_distinct_colored_zones(self):
         source = inspect.getsource(docmagic_app._render_attendance_page)
         self.assertIn("flow-zone", source)

@@ -8004,7 +8004,8 @@ def _render_attendance_page(
                 const isAbsent = selected && selected.value === 'absent';
                 if (reason) {{
                     reason.disabled = !isAbsent;
-                    reason.closest('.field')?.querySelector('label')?.textContent = isAbsent ? '缺席原因 - 如有' : '缺席原因 - 缺席先填';
+                    const reasonLabel = reason.closest('.field')?.querySelector('label');
+                    if (reasonLabel) reasonLabel.textContent = isAbsent ? '缺席原因' : '缺席原因 - 缺席先填';
                     if (!isAbsent) {{
                         reason.value = '';
                     }}
