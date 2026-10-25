@@ -6958,6 +6958,24 @@ def _attendance_normalize_status(status: str) -> str:
     return value if value in {"present", "absent", "dropped"} else "present"
 
 
+ATTENDANCE_ABSENCE_REASON_OPTIONS = ("未能聯絡", "病假/事假")
+
+
+def _attendance_absence_reason_options_html(selected_value: str = "") -> str:
+    pieces = ['<option value="">請選擇缺席原因</option>']
+    for reason in ATTENDANCE_ABSENCE_REASON_OPTIONS:
+        selected = " selected" if reason == str(selected_value or "").strip() else ""
+        pieces.append(f'<option value="{html.escape(reason, quote=True)}"{selected}>{html.escape(reason)}</option>')
+    return "".join(pieces)
+
+
+def _attendance_normalize_absence_reason(value: str, status: str) -> str:
+    if _attendance_normalize_status(status) != "absent":
+        return ""
+    reason = str(value or "").strip()
+    return reason if reason in ATTENDANCE_ABSENCE_REASON_OPTIONS else ""
+
+
 def _attendance_area_options_html(selected_value: str = ""):
     pieces = ['<option value="">請選擇地區</option>']
     for area in ATTENDANCE_AREA_OPTIONS:
@@ -7007,7 +7025,7 @@ def _attendance_status_option_html(value: str, label: str, selected_value: str):
 
 
 def _attendance_batch_row_html():
-    return """
+    return f"""
     <div class="batch-row" data-batch-row>
         <div class="field">
             <label>學生名稱</label>
@@ -7023,7 +7041,9 @@ def _attendance_batch_row_html():
         </div>
         <div class="field">
             <label>缺席原因</label>
-            <input name="batch_absence_reason" placeholder="如有才填">
+            <select name="batch_absence_reason" disabled>
+                {_attendance_absence_reason_options_html()}
+            </select>
         </div>
         <button class="batch-remove" type="button" data-batch-remove>移除</button>
     </div>
@@ -7109,7 +7129,9 @@ def _attendance_roster_row_html(student_row, selected_status: str = "present"):
                 </select>
             </td>
             <td>
-                <input class="roster-reason" name="absence_reason_{student_id}" placeholder="缺席先填">
+                <select class="roster-reason" name="absence_reason_{student_id}" disabled>
+                    {_attendance_absence_reason_options_html()}
+                </select>
             </td>
         </tr>
     """
@@ -8011,6 +8033,18 @@ def _render_attendance_page(
                 if (allRows.length <= 1) return;
                 row.remove();
             }});
+
+            rows.addEventListener('change', (event) => {{
+                const status = event.target.closest('select[name="batch_status"]');
+                if (!status) return;
+                const row = status.closest('[data-batch-row]');
+                const reason = row?.querySelector('select[name="batch_absence_reason"]');
+                if (!reason) return;
+                const isAbsent = status.value === 'absent';
+                reason.disabled = !isAbsent;
+                reason.required = isAbsent;
+                if (!isAbsent) reason.value = '';
+            }});
         }})();
         (function() {{
             const rosterRows = Array.from(document.querySelectorAll('[data-roster-row]'));
@@ -8020,7 +8054,9 @@ def _render_attendance_page(
                 const reason = row.querySelector('.roster-reason');
                 if (!status || !reason) return;
                 const isAbsent = status.value === 'absent';
-                reason.placeholder = isAbsent ? '請填缺席原因' : '如有可備註';
+                reason.disabled = !isAbsent;
+                reason.required = isAbsent;
+                if (!isAbsent) reason.value = '';
             }};
             rosterRows.forEach((row) => {{
                 const status = row.querySelector('select[name^="student_status_"]');
@@ -8165,7 +8201,7 @@ async def attendance_submit(
     prepared_rows = []
     for student_id, student_name, display_order, note in lesson_students:
         status_value = _attendance_normalize_status(form.get(f"student_status_{student_id}"))
-        reason_value = (form.get(f"absence_reason_{student_id}") or "").strip() if status_value == "absent" else ""
+        reason_value = _attendance_normalize_absence_reason(form.get(f"absence_reason_{student_id}"), status_value)
         if status_value == "absent" and not reason_value:
             raise HTTPException(status_code=400, detail=f"{student_name or '學生'} 缺席原因必須填寫")
         prepared_rows.append(
@@ -8668,7 +8704,7 @@ async def _attendance_create_manual_record(
     time_value = class_time.strip()
     category_value = class_category.strip()
     status_value = _attendance_normalize_status(status)
-    reason_value = absence_reason.strip() if status_value == "absent" else ""
+    reason_value = _attendance_normalize_absence_reason(absence_reason, status_value)
     if status_value == "absent" and not reason_value:
         raise HTTPException(status_code=400, detail="缺席原因必須填寫")
 
@@ -8767,7 +8803,10 @@ async def attendance_batch_create(
         if not student_value:
             continue
         status_value = _attendance_normalize_status(batch_status[idx] if idx < len(batch_status) else "present")
-        reason_value = (batch_absence_reason[idx] if idx < len(batch_absence_reason) else "").strip() if status_value == "absent" else ""
+        reason_value = _attendance_normalize_absence_reason(
+            batch_absence_reason[idx] if idx < len(batch_absence_reason) else "",
+            status_value,
+        )
         if status_value == "absent" and not reason_value:
             raise HTTPException(status_code=400, detail=f"{student_value} 缺席原因必須填寫")
         cursor.execute(

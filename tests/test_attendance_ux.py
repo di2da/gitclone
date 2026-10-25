@@ -35,6 +35,20 @@ class AttendanceUxTests(unittest.TestCase):
         self.assertIn("_attendance_normalize_status", source)
         self.assertNotIn('"absent" if status_value == "absent" else "present"', source)
 
+    def test_absence_reason_options_are_restricted(self):
+        options = docmagic_app._attendance_absence_reason_options_html()
+        self.assertIn("未能聯絡", options)
+        self.assertIn("病假/事假", options)
+        self.assertEqual(docmagic_app._attendance_normalize_absence_reason("未能聯絡", "absent"), "未能聯絡")
+        self.assertEqual(docmagic_app._attendance_normalize_absence_reason("病假/事假", "absent"), "病假/事假")
+        self.assertEqual(docmagic_app._attendance_normalize_absence_reason("其他", "absent"), "")
+        self.assertEqual(docmagic_app._attendance_normalize_absence_reason("未能聯絡", "present"), "")
+
+    def test_roster_reason_is_a_dropdown(self):
+        row = docmagic_app._attendance_roster_row_html((1, "學生", 1, ""))
+        self.assertIn('<select class="roster-reason"', row)
+        self.assertNotIn('<input class="roster-reason"', row)
+
     def test_attendance_page_uses_distinct_colored_zones(self):
         source = inspect.getsource(docmagic_app._render_attendance_page)
         self.assertIn("flow-zone", source)
